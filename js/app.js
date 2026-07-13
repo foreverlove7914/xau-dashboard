@@ -19,9 +19,18 @@ const TV_SYMBOL = "BINANCE:PAXGUSDT.P";    // TradingView chart symbol
 const WS_PUBLIC_URL = `wss://fstream.binance.com/public/stream?streams=${SYMBOL}@depth20@100ms`;
 const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker`;
 
-const DEPTH_ROWS = 20;      // rows shown per side in the order book list (max available from depth20 stream)      // rows shown per side in the order book list
+const DEPTH_ROWS = 20;      // rows shown per side in the order book list (max available from depth20 stream)
 const TAPE_MAX_ROWS = 40;   // trades kept in the tape
 const RECONNECT_DELAY = 2500;
+
+// --- auto wall detection ---
+const WALL_MULTIPLIER = 3;   // a row is a "wall" if its size >= 3x the average visible size
+const WALL_MIN_ABS = 1.5;    // ...and at least this many PAXG, to ignore noise when the book is thin
+
+// --- footprint (buy vs sell volume per price bucket) ---
+const FOOTPRINT_BUCKET = 0.5;     // price bucket width (USDT)
+const FOOTPRINT_ROWS_EACH_SIDE = 8; // buckets shown above & below current price
+const FOOTPRINT_TRADE_HISTORY = 600; // how many recent trades feed the footprint
 
 let wsPublic = null;
 let wsMarket = null;
@@ -31,6 +40,7 @@ let connState = { public: "connecting", market: "connecting" };
 let book = { bids: [], asks: [] };
 let lastPrice = null;
 let prevPrice = null;
+let tradeHistory = []; // { price, qty, isSell }
 
 /* ---------------------------------------------------------------------- */
 /* TradingView chart                                                      */
@@ -161,11 +171,18 @@ function renderBook(){
     ...bids.map(b => b[1]), ...asks.map(a => a[1]), 0.0001
   );
 
+  // average size across all visible rows — a row well above this is flagged as a "wall"
+  const allSizes = [...bids.map(b => b[1]), ...asks.map(a => a[1])];
+  const avgSize = allSizes.reduce((a, b) => a + b, 0) / Math.max(allSizes.length, 1);
+  const wallThreshold = Math.max(avgSize * WALL_MULTIPLIER, WALL_MIN_ABS);
+  const isWall = (size) => size >= wallThreshold;
+
   let bidTotal = 0, askTotal = 0;
   const bidsHtml = bids.map(([price, size]) => {
     bidTotal += size;
     const pct = Math.min(100, (size / maxSize) * 100);
-    return `<div class="book__row book__row--bid">
+    const wallClass = isWall(size) ? " book__row--wall" : "";
+    return `<div class="book__row book__row--bid${wallClass}">
       <span class="r-bar" style="width:${pct}%"></span>
       <span class="r-price">${fmt(price)}</span>
       <span class="r-size">${fmt(size, 3)}</span>
@@ -176,7 +193,8 @@ function renderBook(){
   const asksHtml = asks.map(([price, size]) => {
     askTotal += size;
     const pct = Math.min(100, (size / maxSize) * 100);
-    return `<div class="book__row book__row--ask">
+    const wallClass = isWall(size) ? " book__row--wall" : "";
+    return `<div class="book__row book__row--ask${wallClass}">
       <span class="r-bar" style="width:${pct}%"></span>
       <span class="r-price">${fmt(price)}</span>
       <span class="r-size">${fmt(size, 3)}</span>
@@ -322,6 +340,10 @@ function handleTrade(d){
   const isSell = d.m === true; // buyer is maker -> aggressor sold
   setLastPrice(price);
 
+  tradeHistory.push({ price, qty, isSell });
+  if (tradeHistory.length > FOOTPRINT_TRADE_HISTORY) tradeHistory.shift();
+  renderFootprint();
+
   const row = document.createElement("div");
   row.className = "tape__row";
   const time = new Date(d.T).toLocaleTimeString("en-GB", { hour12: false });
@@ -334,6 +356,57 @@ function handleTrade(d){
   const tape = document.getElementById("tapeBody");
   tape.prepend(row);
   while (tape.children.length > TAPE_MAX_ROWS) tape.lastChild.remove();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Footprint — aggregates recent trades into buy/sell volume per price   */
+/* bucket, centred on the current price. Classic footprint-chart reading:*/
+/* green (buy) bar right, red (sell) bar left, delta = buy minus sell.   */
+/* ---------------------------------------------------------------------- */
+function renderFootprint(){
+  const body = document.getElementById("footprintBody");
+  if (!lastPrice || tradeHistory.length === 0){
+    body.innerHTML = `<div class="footprint__empty">Menunggu dagangan…</div>`;
+    return;
+  }
+
+  const bucketOf = (price) => Math.round(price / FOOTPRINT_BUCKET) * FOOTPRINT_BUCKET;
+  const buckets = new Map(); // bucketPrice -> { buy, sell }
+
+  for (const t of tradeHistory){
+    const b = bucketOf(t.price);
+    if (!buckets.has(b)) buckets.set(b, { buy: 0, sell: 0 });
+    const entry = buckets.get(b);
+    if (t.isSell) entry.sell += t.qty; else entry.buy += t.qty;
+  }
+
+  const currentBucket = bucketOf(lastPrice);
+  const rows = [];
+  for (let i = FOOTPRINT_ROWS_EACH_SIDE; i >= -FOOTPRINT_ROWS_EACH_SIDE; i--){
+    const p = +(currentBucket + i * FOOTPRINT_BUCKET).toFixed(2);
+    const entry = buckets.get(p) || { buy: 0, sell: 0 };
+    rows.push({ price: p, ...entry });
+  }
+
+  const maxVol = Math.max(...rows.map(r => Math.max(r.buy, r.sell)), 0.001);
+
+  body.innerHTML = rows.map(r => {
+    const buyPct = Math.min(100, (r.buy / maxVol) * 100);
+    const sellPct = Math.min(100, (r.sell / maxVol) * 100);
+    const delta = r.buy - r.sell;
+    const deltaClass = delta > 0 ? "pos" : delta < 0 ? "neg" : "";
+    const isCurrent = r.price === currentBucket;
+    return `<div class="footprint__row">
+      <div class="fp-sell-bar-wrap">
+        ${r.sell > 0 ? `<span class="fp-vol fp-vol--sell">${fmt(r.sell, 2)}</span><span class="fp-bar fp-bar--sell" style="width:${sellPct}%"></span>` : ""}
+      </div>
+      <div class="fp-price${isCurrent ? " current" : ""}">${fmt(r.price)}</div>
+      <div class="fp-buy-bar-wrap">
+        ${r.buy > 0 ? `<span class="fp-bar fp-bar--buy" style="width:${buyPct}%"></span><span class="fp-vol fp-vol--buy">${fmt(r.buy, 2)}</span>` : ""}
+      </div>
+      <div class="fp-delta ${deltaClass}">${delta >= 0 ? "+" : ""}${fmt(delta, 2)}</div>
+    </div>`;
+  }).join("");
 }
 
 function setLastPrice(price){
