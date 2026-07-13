@@ -5,29 +5,31 @@
    ============================================================ */
 
 :root{
-  --bg:            #0a0c11;
+  --bg:            #0d1017;
   --bg-vignette:   #050608;
-  --panel:         #10131a;
-  --panel-alt:     #141822;
-  --panel-raised:  #181d29;
-  --border:        #1e2430;
-  --border-soft:   #171c26;
+  --panel:         #161a24;
+  --panel-alt:     #1c212d;
+  --panel-raised:  #232a38;
+  --border:        #2b3342;
+  --border-soft:   #232a38;
 
-  --text:          #e8e4d8;
-  --text-dim:      #6c7484;
-  --text-faint:    #454c59;
+  --text:          #f6f3ea;
+  --text-dim:      #98a2b3;
+  --text-faint:    #5c6576;
 
-  --gold:          #cf9f3f;
-  --gold-bright:   #f0c869;
+  --gold:          #e0ab48;
+  --gold-bright:   #ffd479;
   --gold-dim:      #6b5726;
 
-  --bid:           #22a878;
-  --bid-bright:    #3fd39c;
-  --bid-glow:      rgba(34,168,120,0.18);
+  --bid:           #2ecc93;
+  --bid-bright:    #6bf0c2;
+  --bid-glow:      rgba(46,204,147,0.30);
+  --bid-row-tint:  rgba(46,204,147,0.08);
 
-  --ask:           #d64b4f;
-  --ask-bright:    #f26b6f;
-  --ask-glow:      rgba(214,75,79,0.18);
+  --ask:           #ff5c62;
+  --ask-bright:    #ff9599;
+  --ask-glow:      rgba(255,92,98,0.30);
+  --ask-row-tint:  rgba(255,92,98,0.08);
 
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
@@ -186,14 +188,17 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
   position:relative;
   display:grid;
   grid-template-columns:1fr 1fr 1fr;
-  padding:2.5px 14px;
-  font-size:12px;
+  padding:3.5px 14px 3.5px 12px;
+  font-size:12.5px;
   font-variant-numeric:tabular-nums;
   z-index:1;
+  border-left:3px solid transparent;
 }
-.book__row .r-price{ font-weight:600; }
-.book__row .r-size{ text-align:right; color:var(--text-dim); }
-.book__row .r-total{ text-align:right; color:var(--text-faint); }
+.book__row .r-price{ font-weight:700; }
+.book__row .r-size{ text-align:right; color:var(--text); opacity:0.85; }
+.book__row .r-total{ text-align:right; color:var(--text-dim); }
+.book__row--ask{ background:var(--ask-row-tint); border-left-color:var(--ask); }
+.book__row--bid{ background:var(--bid-row-tint); border-left-color:var(--bid); }
 .book__row--ask .r-price{ color:var(--ask-bright); }
 .book__row--bid .r-price{ color:var(--bid-bright); }
 
