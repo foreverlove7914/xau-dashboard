@@ -128,10 +128,11 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .layout{
   display:grid;
   grid-template-columns: 2fr 1fr;
-  grid-template-rows: 520px 260px;
+  grid-template-rows: 520px 260px 320px;
   grid-template-areas:
     "chart book"
-    "depth tape";
+    "depth tape"
+    "footprint footprint";
   gap:14px;
   padding:16px 22px;
   max-width:1680px;
@@ -142,6 +143,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .panel--book{ grid-area:book; }
 .panel--depth{ grid-area:depth; }
 .panel--tape{ grid-area:tape; }
+.panel--footprint{ grid-area:footprint; }
 
 .panel{
   background:var(--panel);
@@ -179,6 +181,8 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .legend::before{ content:""; width:8px; height:8px; border-radius:2px; }
 .legend--bid::before{ background:var(--bid); }
 .legend--ask::before{ background:var(--ask); }
+.legend--wall::before{ display:none; }
+.legend--wall{ color:var(--gold-bright); }
 
 .book{ flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
 .book__col{ flex:1; display:flex; flex-direction:column; overflow-y:auto; padding:4px 0; }
@@ -208,6 +212,27 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 }
 .book__row--ask .r-bar{ background:var(--ask-glow); }
 .book__row--bid .r-bar{ background:var(--bid-glow); }
+
+/* auto wall detection — sized well above the row average */
+.book__row--wall{
+  border-left-width:4px;
+  box-shadow: inset 0 0 0 1px rgba(255,212,121,0.35);
+}
+.book__row--wall .r-price::after{
+  content:"🧱";
+  margin-left:6px;
+  font-size:10px;
+  filter: drop-shadow(0 0 3px rgba(255,212,121,0.6));
+}
+.book__row--wall .r-size{
+  color:var(--gold-bright);
+  font-weight:700;
+  animation: wallPulse 1.8s ease-in-out infinite;
+}
+@keyframes wallPulse{
+  0%,100%{ opacity:1; }
+  50%{ opacity:0.55; }
+}
 
 .book__mid{
   display:flex; align-items:baseline; justify-content:center; gap:10px;
@@ -254,7 +279,49 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .book__col::-webkit-scrollbar-thumb, .tape__body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
 .book__col::-webkit-scrollbar-track, .tape__body::-webkit-scrollbar-track{ background:transparent; }
 
-/* ============ FOOTER ============ */
+/* ============ FOOTPRINT ============ */
+.footprint__cols{
+  display:grid; grid-template-columns:1fr 100px 1fr 90px;
+  padding:6px 14px; font-size:10px; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:0.04em;
+  border-bottom:1px solid var(--border-soft); flex-shrink:0;
+  text-align:center;
+}
+.footprint__body{ flex:1; overflow-y:auto; }
+.footprint__row{
+  display:grid; grid-template-columns:1fr 100px 1fr 90px;
+  align-items:center;
+  min-height:24px;
+  border-bottom:1px solid rgba(255,255,255,0.02);
+}
+.fp-sell-bar-wrap, .fp-buy-bar-wrap{
+  display:flex; align-items:center; height:100%; padding:2px 8px;
+}
+.fp-sell-bar-wrap{ justify-content:flex-end; }
+.fp-buy-bar-wrap{ justify-content:flex-start; }
+.fp-bar{ height:15px; border-radius:2px; min-width:2px; }
+.fp-bar--sell{ background:linear-gradient(90deg, transparent, var(--ask)); }
+.fp-bar--buy{ background:linear-gradient(90deg, var(--bid), transparent); }
+.fp-vol{
+  font-size:11px; font-variant-numeric:tabular-nums; padding:0 6px;
+  white-space:nowrap;
+}
+.fp-vol--sell{ color:var(--ask-bright); }
+.fp-vol--buy{ color:var(--bid-bright); }
+.fp-price{
+  text-align:center; font-weight:700; font-size:12px;
+  font-variant-numeric:tabular-nums; color:var(--text);
+}
+.fp-price.current{ color:var(--gold-bright); }
+.fp-delta{
+  text-align:center; font-size:11px; font-weight:700;
+  font-variant-numeric:tabular-nums; padding:2px 4px; border-radius:2px;
+}
+.fp-delta.pos{ color:var(--bid-bright); background:var(--bid-row-tint); }
+.fp-delta.neg{ color:var(--ask-bright); background:var(--ask-row-tint); }
+.footprint__empty{
+  padding:24px 14px; text-align:center; color:var(--text-faint); font-size:12px;
+}
 .footer{
   display:flex; justify-content:space-between;
   padding:10px 22px 24px; max-width:1680px; margin:0 auto;
@@ -270,11 +337,13 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
       "chart"
       "book"
       "depth"
-      "tape";
+      "tape"
+      "footprint";
   }
   .panel--chart{ height:440px; }
   .panel--book{ height:420px; }
   .panel--depth{ height:280px; }
   .panel--tape{ height:280px; }
+  .panel--footprint{ height:340px; }
   .topbar__stats{ padding-left:0; border-left:none; gap:16px; }
 }
