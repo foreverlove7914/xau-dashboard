@@ -19,7 +19,7 @@ const TV_SYMBOL = "BINANCE:PAXGUSDT.P";    // TradingView chart symbol
 const WS_PUBLIC_URL = `wss://fstream.binance.com/public/stream?streams=${SYMBOL}@depth20@100ms`;
 const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker`;
 
-const DEPTH_ROWS = 14;      // rows shown per side in the order book list
+const DEPTH_ROWS = 20;      // rows shown per side in the order book list (max available from depth20 stream)      // rows shown per side in the order book list
 const TAPE_MAX_ROWS = 40;   // trades kept in the tape
 const RECONNECT_DELAY = 2500;
 
