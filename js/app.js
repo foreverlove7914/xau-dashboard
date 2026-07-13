@@ -12,14 +12,22 @@
 
 const SYMBOL = "paxgusdt";                 // Binance Futures WS symbol (lowercase)
 const TV_SYMBOL = "BINANCE:PAXGUSDT.P";    // TradingView chart symbol
-const WS_URL = `wss://fstream.binance.com/stream?streams=${SYMBOL}@depth20@100ms/${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker`;
+
+// Binance migrated WS streams onto routed endpoints (/public, /market, /private).
+// @depth belongs to /public. @markPrice, @aggTrade and @ticker belong to /market.
+// Unrouted connections now only receive /public data, so we need two sockets.
+const WS_PUBLIC_URL = `wss://fstream.binance.com/public/stream?streams=${SYMBOL}@depth20@100ms`;
+const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker`;
 
 const DEPTH_ROWS = 14;      // rows shown per side in the order book list
 const TAPE_MAX_ROWS = 40;   // trades kept in the tape
 const RECONNECT_DELAY = 2500;
 
-let ws = null;
-let reconnectTimer = null;
+let wsPublic = null;
+let wsMarket = null;
+let reconnectTimerPublic = null;
+let reconnectTimerMarket = null;
+let connState = { public: "connecting", market: "connecting" };
 let book = { bids: [], asks: [] };
 let lastPrice = null;
 let prevPrice = null;
@@ -53,45 +61,75 @@ function initChart(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* WebSocket lifecycle                                                    */
+/* WebSocket lifecycle — two routed connections                          */
 /* ---------------------------------------------------------------------- */
-function connect(){
-  setConn("connecting");
-  ws = new WebSocket(WS_URL);
+function connectPublic(){
+  connState.public = "connecting";
+  updateConnLabel();
+  wsPublic = new WebSocket(WS_PUBLIC_URL);
 
-  ws.onopen = () => setConn("live");
+  wsPublic.onopen = () => { connState.public = "live"; updateConnLabel(); };
 
-  ws.onmessage = (evt) => {
+  wsPublic.onmessage = (evt) => {
     let msg;
     try { msg = JSON.parse(evt.data); } catch { return; }
     const { stream, data } = msg;
     if (!stream || !data) return;
-
     if (stream.endsWith("@depth20@100ms")) handleDepth(data);
-    else if (stream.endsWith("@markPrice@1s")) handleMarkPrice(data);
+  };
+
+  wsPublic.onerror = () => { connState.public = "error"; updateConnLabel(); };
+
+  wsPublic.onclose = () => {
+    connState.public = "error";
+    updateConnLabel();
+    clearTimeout(reconnectTimerPublic);
+    reconnectTimerPublic = setTimeout(connectPublic, RECONNECT_DELAY);
+  };
+}
+
+function connectMarket(){
+  connState.market = "connecting";
+  updateConnLabel();
+  wsMarket = new WebSocket(WS_MARKET_URL);
+
+  wsMarket.onopen = () => { connState.market = "live"; updateConnLabel(); };
+
+  wsMarket.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    const { stream, data } = msg;
+    if (!stream || !data) return;
+    if (stream.endsWith("@markPrice@1s")) handleMarkPrice(data);
     else if (stream.endsWith("@aggTrade")) handleTrade(data);
     else if (stream.endsWith("@ticker")) handleTicker(data);
   };
 
-  ws.onerror = () => setConn("error");
+  wsMarket.onerror = () => { connState.market = "error"; updateConnLabel(); };
 
-  ws.onclose = () => {
-    setConn("error");
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connect, RECONNECT_DELAY);
+  wsMarket.onclose = () => {
+    connState.market = "error";
+    updateConnLabel();
+    clearTimeout(reconnectTimerMarket);
+    reconnectTimerMarket = setTimeout(connectMarket, RECONNECT_DELAY);
   };
 }
 
-function setConn(state){
+function updateConnLabel(){
   const dot = document.getElementById("connDot");
   const label = document.getElementById("connLabel");
   dot.classList.remove("live", "error");
-  if (state === "live"){
+
+  const { public: pub, market: mkt } = connState;
+  if (pub === "live" && mkt === "live"){
     dot.classList.add("live");
     label.textContent = "Langsung";
-  } else if (state === "error"){
+  } else if (pub === "error" && mkt === "error"){
     dot.classList.add("error");
     label.textContent = "Terputus — cuba semula…";
+  } else if (pub === "live" || mkt === "live"){
+    dot.classList.add("live");
+    label.textContent = "Sebahagian langsung…";
   } else {
     label.textContent = "Menyambung…";
   }
@@ -320,7 +358,8 @@ function tickClock(){
 window.addEventListener("DOMContentLoaded", () => {
   initChart();
   resizeCanvas();
-  connect();
+  connectPublic();
+  connectMarket();
   tickClock();
   setInterval(tickClock, 1000);
 });
