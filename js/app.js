@@ -244,13 +244,18 @@ function renderDepth(){
   cum = 0;
   const askCum = asks.map(([p, q]) => { cum += q; return [p, cum]; });
 
-  const maxCum = Math.max(bidCum.at(-1)[1], askCum.at(-1)[1]);
+  const maxCumBid = bidCum.at(-1)[1];
+  const maxCumAsk = askCum.at(-1)[1];
   const minPrice = bidCum.at(-1)[0];
   const maxPrice = askCum.at(-1)[0];
   const priceRange = Math.max(maxPrice - minPrice, 0.0001);
 
   const xFor = (price) => ((price - minPrice) / priceRange) * w;
-  const yFor = (vol) => h - (vol / maxCum) * (h - 18) - 4;
+  // each side is scaled to its OWN max so a strong wall on one side never
+  // flattens the other side into invisibility — this favours "can I see
+  // the shape of both sides" over "which side has more total liquidity"
+  // (that imbalance is already visible in the order book + footprint).
+  const yForSide = (vol, sideMax) => h - (vol / sideMax) * (h - 18) - 4;
 
   // grid baseline
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
@@ -261,9 +266,9 @@ function renderDepth(){
   ctx.stroke();
 
   // bid area (gold-green gradient, drawn left -> mid)
-  drawArea(bidCum, xFor, yFor, h, "rgba(34,168,120,0.55)", "rgba(34,168,120,0.02)", "#3fd39c");
+  drawArea(bidCum, xFor, (v) => yForSide(v, maxCumBid), h, "rgba(34,168,120,0.55)", "rgba(34,168,120,0.02)", "#3fd39c");
   // ask area (red gradient, drawn mid -> right)
-  drawArea(askCum, xFor, yFor, h, "rgba(214,75,79,0.55)", "rgba(214,75,79,0.02)", "#f26b6f");
+  drawArea(askCum, xFor, (v) => yForSide(v, maxCumAsk), h, "rgba(214,75,79,0.55)", "rgba(214,75,79,0.02)", "#f26b6f");
 
   // mid price marker
   if (lastPrice){
