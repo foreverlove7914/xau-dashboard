@@ -128,8 +128,9 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .layout{
   display:grid;
   grid-template-columns: 2fr 1fr;
-  grid-template-rows: 520px 260px 320px;
+  grid-template-rows: auto 520px 260px 320px;
   grid-template-areas:
+    "momentum momentum"
     "chart book"
     "depth tape"
     "footprint footprint";
@@ -139,6 +140,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
   margin:0 auto;
 }
 
+.panel--momentum{ grid-area:momentum; }
 .panel--chart{ grid-area:chart; }
 .panel--book{ grid-area:book; }
 .panel--depth{ grid-area:depth; }
@@ -279,7 +281,52 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .book__col::-webkit-scrollbar-thumb, .tape__body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
 .book__col::-webkit-scrollbar-track, .tape__body::-webkit-scrollbar-track{ background:transparent; }
 
-/* ============ FOOTPRINT ============ */
+/* ============ MOMENTUM & TREND ============ */
+.momentum__inner{
+  display:flex; align-items:center; gap:28px;
+  padding:14px 20px; flex-wrap:wrap;
+}
+
+.trend-badge{
+  display:flex; align-items:center; gap:12px;
+  padding:8px 16px;
+  border-radius:var(--radius);
+  background:var(--panel-alt);
+  border:1px solid var(--border);
+  min-width:220px;
+}
+.trend-badge__icon{
+  font-size:20px; line-height:1;
+  width:32px; height:32px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--panel-raised);
+  flex-shrink:0;
+}
+.trend-badge__text{ display:flex; flex-direction:column; gap:1px; }
+.trend-badge__label{ font-family:var(--font-display); font-weight:700; font-size:14px; }
+.trend-badge__sub{ font-size:10px; color:var(--text-faint); }
+
+.trend-badge.up .trend-badge__icon{ color:var(--bid-bright); }
+.trend-badge.up .trend-badge__label{ color:var(--bid-bright); }
+.trend-badge.down .trend-badge__icon{ color:var(--ask-bright); }
+.trend-badge.down .trend-badge__label{ color:var(--ask-bright); }
+.trend-badge.flat .trend-badge__icon{ color:var(--gold-bright); }
+.trend-badge.flat .trend-badge__label{ color:var(--gold-bright); }
+
+.pressure{ flex:1; min-width:240px; display:flex; flex-direction:column; gap:5px; }
+.pressure__labels{ display:flex; justify-content:space-between; font-size:11px; }
+.pressure__label{ color:var(--text-dim); }
+.pressure__label b{ font-size:13px; font-variant-numeric:tabular-nums; }
+.pressure__label--buy b{ color:var(--bid-bright); }
+.pressure__label--sell b{ color:var(--ask-bright); }
+.pressure__bar{
+  display:flex; height:16px; border-radius:8px; overflow:hidden;
+  background:var(--panel-raised); border:1px solid var(--border);
+}
+.pressure__fill{ height:100%; transition:width .4s ease; }
+.pressure__fill--buy{ background:linear-gradient(90deg, var(--bid), var(--bid-bright)); }
+.pressure__fill--sell{ background:linear-gradient(90deg, var(--ask-bright), var(--ask)); }
+.pressure__hint{ font-size:10px; color:var(--text-faint); }
 .footprint__cols{
   display:grid; grid-template-columns:1fr 100px 1fr 90px;
   padding:6px 14px; font-size:10px; color:var(--text-dim);
@@ -334,6 +381,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
     grid-template-columns:1fr;
     grid-template-rows:auto;
     grid-template-areas:
+      "momentum"
       "chart"
       "book"
       "depth"
