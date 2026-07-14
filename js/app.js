@@ -33,10 +33,12 @@ const FOOTPRINT_ROWS_EACH_SIDE = 8; // buckets shown above & below current price
 const FOOTPRINT_TRADE_HISTORY = 600; // how many recent trades feed the footprint
 
 // --- trend detection (from tick-by-tick price, since we have no OHLC feed client-side) ---
-const TREND_FAST_WINDOW = 15;   // ticks — short-term average
-const TREND_SLOW_WINDOW = 60;   // ticks — longer-term average
-const TREND_FLAT_THRESHOLD = 0.0003; // 0.03% — below this, call it "flat" not up/down
-const PRICE_TICK_HISTORY = 300;
+const TREND_FAST_WINDOW = 40;    // ticks — short-term average (widened so tiny wobbles don't flip it)
+const TREND_SLOW_WINDOW = 200;   // ticks — longer-term average
+const TREND_HYSTERESIS = 0.00006; // must clear the flip point by this much to actually change direction
+const PRICE_TICK_HISTORY = 400;
+
+let trendState = null; // "up" | "down" — sticky once set, no more "flat" wobble
 
 let wsPublic = null;
 let wsMarket = null;
@@ -485,12 +487,18 @@ function renderTrend(){
   const slowAvg = avg(priceTicks.slice(-Math.min(TREND_SLOW_WINDOW, priceTicks.length)));
   const diffPct = (fastAvg - slowAvg) / slowAvg;
 
+  // sticky direction: only flips once the gap clearly crosses to the other
+  // side by more than the hysteresis buffer — stops rapid up/down/up wobble
+  if (trendState === null){
+    trendState = diffPct >= 0 ? "up" : "down";
+  } else if (trendState === "up" && diffPct < -TREND_HYSTERESIS){
+    trendState = "down";
+  } else if (trendState === "down" && diffPct > TREND_HYSTERESIS){
+    trendState = "up";
+  }
+
   badge.className = "trend-badge";
-  if (Math.abs(diffPct) < TREND_FLAT_THRESHOLD){
-    badge.classList.add("flat");
-    icon.textContent = "▬";
-    label.textContent = "MENDATAR";
-  } else if (diffPct > 0){
+  if (trendState === "up"){
     badge.classList.add("up");
     icon.textContent = "▲";
     label.textContent = "TREN NAIK";
