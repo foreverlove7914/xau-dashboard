@@ -220,6 +220,32 @@ function renderBook(){
     document.getElementById("bookSpread").textContent =
       `spread ${fmt(spread, 2)} (${((spread / mid) * 100).toFixed(3)}%)`;
   }
+
+  renderZones(bids, asks);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Demand / Supply zones — the single biggest resting order on each side */
+/* of the book right now. This is the order-book equivalent of "demand"  */
+/* (bids = buyers waiting) and "supply" (asks = sellers waiting).        */
+/* ---------------------------------------------------------------------- */
+function renderZones(bids, asks){
+  const demandEl = document.getElementById("demandZonePrice");
+  const demandSizeEl = document.getElementById("demandZoneSize");
+  const supplyEl = document.getElementById("supplyZonePrice");
+  const supplySizeEl = document.getElementById("supplyZoneSize");
+  if (!demandEl) return;
+
+  if (bids.length){
+    const biggestBid = bids.reduce((best, row) => row[1] > best[1] ? row : best, bids[0]);
+    demandEl.textContent = fmt(biggestBid[0]);
+    demandSizeEl.textContent = `${fmt(biggestBid[1], 3)} PAXG`;
+  }
+  if (asks.length){
+    const biggestAsk = asks.reduce((best, row) => row[1] > best[1] ? row : best, asks[0]);
+    supplyEl.textContent = fmt(biggestAsk[0]);
+    supplySizeEl.textContent = `${fmt(biggestAsk[1], 3)} PAXG`;
+  }
 }
 
 /* ---- canvas depth map (cumulative liquidity either side of mid) ---- */
