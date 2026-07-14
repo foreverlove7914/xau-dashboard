@@ -32,6 +32,12 @@ const FOOTPRINT_BUCKET = 0.5;     // price bucket width (USDT)
 const FOOTPRINT_ROWS_EACH_SIDE = 8; // buckets shown above & below current price
 const FOOTPRINT_TRADE_HISTORY = 600; // how many recent trades feed the footprint
 
+// --- trend detection (from tick-by-tick price, since we have no OHLC feed client-side) ---
+const TREND_FAST_WINDOW = 15;   // ticks — short-term average
+const TREND_SLOW_WINDOW = 60;   // ticks — longer-term average
+const TREND_FLAT_THRESHOLD = 0.0003; // 0.03% — below this, call it "flat" not up/down
+const PRICE_TICK_HISTORY = 300;
+
 let wsPublic = null;
 let wsMarket = null;
 let reconnectTimerPublic = null;
@@ -41,6 +47,7 @@ let book = { bids: [], asks: [] };
 let lastPrice = null;
 let prevPrice = null;
 let tradeHistory = []; // { price, qty, isSell }
+let priceTicks = [];   // { p: price } — used for the trend indicator
 
 /* ---------------------------------------------------------------------- */
 /* TradingView chart                                                      */
@@ -348,6 +355,7 @@ function handleTrade(d){
   tradeHistory.push({ price, qty, isSell });
   if (tradeHistory.length > FOOTPRINT_TRADE_HISTORY) tradeHistory.shift();
   renderFootprint();
+  renderPressure();
 
   const row = document.createElement("div");
   row.className = "tape__row";
@@ -423,6 +431,69 @@ function setLastPrice(price){
     el.classList.toggle("up", price >= prevPrice);
     el.classList.toggle("down", price < prevPrice);
   }
+
+  priceTicks.push({ p: price });
+  if (priceTicks.length > PRICE_TICK_HISTORY) priceTicks.shift();
+  renderTrend();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Trend indicator — fast vs slow average of recent tick prices          */
+/* ---------------------------------------------------------------------- */
+function renderTrend(){
+  const badge = document.getElementById("trendBadge");
+  const icon = document.getElementById("trendIcon");
+  const label = document.getElementById("trendLabel");
+  const sub = document.getElementById("trendSub");
+
+  if (priceTicks.length < TREND_FAST_WINDOW + 5){
+    badge.className = "trend-badge";
+    icon.textContent = "…";
+    label.textContent = "Mengumpul data…";
+    sub.textContent = `${priceTicks.length}/${TREND_FAST_WINDOW + 5} tick`;
+    return;
+  }
+
+  const avg = (arr) => arr.reduce((a, b) => a + b.p, 0) / arr.length;
+  const fastAvg = avg(priceTicks.slice(-TREND_FAST_WINDOW));
+  const slowAvg = avg(priceTicks.slice(-Math.min(TREND_SLOW_WINDOW, priceTicks.length)));
+  const diffPct = (fastAvg - slowAvg) / slowAvg;
+
+  badge.className = "trend-badge";
+  if (Math.abs(diffPct) < TREND_FLAT_THRESHOLD){
+    badge.classList.add("flat");
+    icon.textContent = "▬";
+    label.textContent = "MENDATAR";
+  } else if (diffPct > 0){
+    badge.classList.add("up");
+    icon.textContent = "▲";
+    label.textContent = "TREN NAIK";
+  } else {
+    badge.classList.add("down");
+    icon.textContent = "▼";
+    label.textContent = "TREN TURUN";
+  }
+  sub.textContent = `EMA${TREND_FAST_WINDOW} vs EMA${TREND_SLOW_WINDOW} · ${diffPct >= 0 ? "+" : ""}${(diffPct * 100).toFixed(3)}%`;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Buyer vs seller pressure — share of buy vs sell volume in recent      */
+/* trade history (same window that feeds the footprint).                 */
+/* ---------------------------------------------------------------------- */
+function renderPressure(){
+  if (tradeHistory.length === 0) return;
+  let buyVol = 0, sellVol = 0;
+  for (const t of tradeHistory){
+    if (t.isSell) sellVol += t.qty; else buyVol += t.qty;
+  }
+  const total = buyVol + sellVol || 1;
+  const buyPct = (buyVol / total) * 100;
+  const sellPct = 100 - buyPct;
+
+  document.getElementById("buyerFill").style.width = `${buyPct}%`;
+  document.getElementById("sellerFill").style.width = `${sellPct}%`;
+  document.getElementById("buyerPct").textContent = `${buyPct.toFixed(0)}%`;
+  document.getElementById("sellerPct").textContent = `${sellPct.toFixed(0)}%`;
 }
 
 /* ---------------------------------------------------------------------- */
