@@ -62,6 +62,31 @@
 
 <main class="layout">
 
+  <!-- MOMENTUM & TREND -->
+  <section class="panel panel--momentum">
+    <div class="momentum__inner">
+      <div class="trend-badge" id="trendBadge">
+        <span class="trend-badge__icon" id="trendIcon">…</span>
+        <div class="trend-badge__text">
+          <span class="trend-badge__label" id="trendLabel">Mengumpul data…</span>
+          <span class="trend-badge__sub" id="trendSub">EMA pantas vs perlahan (harga tick)</span>
+        </div>
+      </div>
+
+      <div class="pressure">
+        <div class="pressure__labels">
+          <span class="pressure__label pressure__label--buy">Pembeli <b id="buyerPct">—</b></span>
+          <span class="pressure__label pressure__label--sell">Penjual <b id="sellerPct">—</b></span>
+        </div>
+        <div class="pressure__bar">
+          <div class="pressure__fill pressure__fill--buy" id="buyerFill" style="width:50%"></div>
+          <div class="pressure__fill pressure__fill--sell" id="sellerFill" style="width:50%"></div>
+        </div>
+        <span class="pressure__hint">Nisbah jumlah dagangan Beli:Jual — 600 dagangan terkini</span>
+      </div>
+    </div>
+  </section>
+
   <!-- CHART -->
   <section class="panel panel--chart">
     <div class="panel__head">
