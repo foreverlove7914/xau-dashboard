@@ -41,6 +41,8 @@ const PRICE_TICK_HISTORY = 400;
 let trendState = null; // "up" | "down" — sticky once set, no more "flat" wobble
 let lastBuyPct = 50;
 let lastSellPct = 50;
+let lastDemandSize = 0;
+let lastSupplySize = 0;
 
 // --- 3-candle H1 entry strategy ---
 let candleHistory = []; // closed H1 candles: { open, close, high, low }
@@ -246,11 +248,13 @@ function renderZones(bids, asks){
     const biggestBid = bids.reduce((best, row) => row[1] > best[1] ? row : best, bids[0]);
     demandEl.textContent = fmt(biggestBid[0]);
     demandSizeEl.textContent = `${fmt(biggestBid[1], 3)} PAXG`;
+    lastDemandSize = biggestBid[1];
   }
   if (asks.length){
     const biggestAsk = asks.reduce((best, row) => row[1] > best[1] ? row : best, asks[0]);
     supplyEl.textContent = fmt(biggestAsk[0]);
     supplySizeEl.textContent = `${fmt(biggestAsk[1], 3)} PAXG`;
+    lastSupplySize = biggestAsk[1];
   }
 }
 
@@ -530,17 +534,13 @@ function renderPressure(){
 /* isn't read in isolation.                                               */
 /* ---------------------------------------------------------------------- */
 async function fetchInitialCandles(){
-  // Backfills recent closed H1 candles via REST on page load. Mobile tabs
-  // often get discarded in the background (screen lock, app switch), which
-  // wipes all in-memory JS state — without this, the signal would have to
-  // rebuild from zero every single time that happens.
   try {
     const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL.toUpperCase()}&interval=1h&limit=6`;
     const res = await fetch(url);
     const rows = await res.json();
     const now = Date.now();
     candleHistory = rows
-      .filter(k => k[6] < now) // closeTime in the past = candle is actually closed
+      .filter(k => k[6] < now)
       .map(k => ({
         open: parseFloat(k[1]),
         high: parseFloat(k[2]),
@@ -550,7 +550,6 @@ async function fetchInitialCandles(){
     renderSignal();
   } catch (e){
     console.error("Gagal tarik sejarah candle H1:", e);
-    // not fatal — live @kline_1h stream will still fill it in over time
   }
 }
 function handleKline(d){
@@ -562,12 +561,10 @@ function handleKline(d){
     low: parseFloat(k.l)
   };
   if (k.x){
-    // candle just closed — lock it in
     candleHistory.push(candle);
     if (candleHistory.length > 10) candleHistory.shift();
     currentCandle = null;
   } else {
-    // still forming — preview only, not used for the signal itself
     currentCandle = candle;
   }
   renderSignal();
@@ -629,12 +626,10 @@ function renderSignal(){
     badge.classList.add("buy");
     icon.textContent = "▲";
     label.textContent = "ENTRY BELI";
-    sub.textContent = "3 candle H1 berturut-turut HIJAU";
   } else if (allRed){
     badge.classList.add("sell");
     icon.textContent = "▼";
     label.textContent = "ENTRY JUAL";
-    sub.textContent = "3 candle H1 berturut-turut MERAH";
   } else {
     badge.classList.add("none");
     icon.textContent = "○";
@@ -645,20 +640,42 @@ function renderSignal(){
   if (allGreen || allRed){
     const wantUp = allGreen;
     const trendOk = wantUp ? trendState === "up" : trendState === "down";
-    const pressureOk = wantUp ? lastBuyPct > 55 : lastSellPct > 55;
+    const pressureVal = wantUp ? lastBuyPct : lastSellPct;
+    const pressureOk = pressureVal > 55;
     const refPrice = wantUp
       ? Math.min(...last3.map(c => c.low))
       : Math.max(...last3.map(c => c.high));
 
+    const trendScore = trendOk ? 100 : 0;
+    const pressureScore = Math.max(0, Math.min(100, (pressureVal - 50) * 2));
+    const zoneFavor = wantUp ? lastDemandSize : lastSupplySize;
+    const zoneAgainst = wantUp ? lastSupplySize : lastDemandSize;
+    const zoneTotal = zoneFavor + zoneAgainst || 1;
+    const zoneScore = (zoneFavor / zoneTotal) * 100;
+    const confidence = Math.round(trendScore * 0.4 + pressureScore * 0.4 + zoneScore * 0.2);
+
+    const confLabel = confidence >= 70 ? "Keyakinan Tinggi"
+      : confidence >= 40 ? "Keyakinan Sederhana"
+      : "Keyakinan Rendah";
+    const confClass = confidence >= 70 ? "yes" : confidence >= 40 ? "" : "no";
+
+    sub.innerHTML = `3 candle H1 berturut-turut ${wantUp ? "HIJAU" : "MERAH"} · <b class="confidence-inline ${confClass}">${confidence}% ${confLabel}</b>`;
+
     checklistEl.innerHTML = `
       <div class="signal-check ${trendOk ? "yes" : "no"}">
-        <span>${trendOk ? "✓" : "✗"}</span> Badge Tren sejajar (${trendState === "up" ? "NAIK" : "TURUN"})
+        <span>${trendOk ? "✓" : "✗"}</span> Badge Tren sejajar (${trendState === "up" ? "NAIK" : "TURUN"}) — ${trendScore}%
       </div>
       <div class="signal-check ${pressureOk ? "yes" : "no"}">
-        <span>${pressureOk ? "✓" : "✗"}</span> ${wantUp ? "Pembeli" : "Penjual"} >55% (${wantUp ? lastBuyPct.toFixed(0) : lastSellPct.toFixed(0)}%)
+        <span>${pressureOk ? "✓" : "✗"}</span> ${wantUp ? "Pembeli" : "Penjual"} ${pressureVal.toFixed(0)}% — ${pressureScore.toFixed(0)}%
+      </div>
+      <div class="signal-check ${zoneScore > 50 ? "yes" : "no"}">
+        <span>${zoneScore > 50 ? "✓" : "✗"}</span> Zon ${wantUp ? "Demand" : "Supply"} lebih besar — ${zoneScore.toFixed(0)}%
       </div>
       <div class="signal-check hint">
         <span>ℹ</span> Rujukan stop-loss: ${wantUp ? "bawah" : "atas"} ${fmt(refPrice)} (${wantUp ? "low" : "high"} 3 candle)
+      </div>
+      <div class="signal-check hint">
+        <span>ℹ</span> Skor confluence — bukan arahan saiz kemasukan
       </div>
     `;
   } else {
