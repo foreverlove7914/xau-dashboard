@@ -372,7 +372,7 @@ function handleTicker(d){
 function handleTrade(d){
   const price = parseFloat(d.p);
   const qty = parseFloat(d.q);
-  const isSell = d.m === true;
+  const isSell = d.m === true; // buyer is maker -> aggressor sold
   setLastPrice(price);
 
   tradeHistory.push({ price, qty, isSell });
@@ -524,7 +524,35 @@ function renderPressure(){
 
 /* ---------------------------------------------------------------------- */
 /* 3-candle H1 entry strategy                                             */
+/* Watches closed 1-hour candles from Binance. When the last 3 closed     */
+/* candles are all the same colour, that's the "entry" signal. We cross-  */
+/* check it against the Tren badge and the Pembeli/Penjual split so it    */
+/* isn't read in isolation.                                               */
 /* ---------------------------------------------------------------------- */
+async function fetchInitialCandles(){
+  // Backfills recent closed H1 candles via REST on page load. Mobile tabs
+  // often get discarded in the background (screen lock, app switch), which
+  // wipes all in-memory JS state — without this, the signal would have to
+  // rebuild from zero every single time that happens.
+  try {
+    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL.toUpperCase()}&interval=1h&limit=6`;
+    const res = await fetch(url);
+    const rows = await res.json();
+    const now = Date.now();
+    candleHistory = rows
+      .filter(k => k[6] < now) // closeTime in the past = candle is actually closed
+      .map(k => ({
+        open: parseFloat(k[1]),
+        high: parseFloat(k[2]),
+        low: parseFloat(k[3]),
+        close: parseFloat(k[4])
+      }));
+    renderSignal();
+  } catch (e){
+    console.error("Gagal tarik sejarah candle H1:", e);
+    // not fatal — live @kline_1h stream will still fill it in over time
+  }
+}
 function handleKline(d){
   const k = d.k;
   const candle = {
@@ -534,10 +562,12 @@ function handleKline(d){
     low: parseFloat(k.l)
   };
   if (k.x){
+    // candle just closed — lock it in
     candleHistory.push(candle);
     if (candleHistory.length > 10) candleHistory.shift();
     currentCandle = null;
   } else {
+    // still forming — preview only, not used for the signal itself
     currentCandle = candle;
   }
   renderSignal();
@@ -656,6 +686,7 @@ window.addEventListener("DOMContentLoaded", () => {
   resizeCanvas();
   connectPublic();
   connectMarket();
+  fetchInitialCandles();
   tickClock();
   setInterval(tickClock, 1000);
 });
