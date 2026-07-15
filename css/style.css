@@ -128,8 +128,9 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .layout{
   display:grid;
   grid-template-columns: 2fr 1fr;
-  grid-template-rows: auto 520px 260px 320px;
+  grid-template-rows: auto auto 520px 260px 320px;
   grid-template-areas:
+    "signal signal"
     "momentum momentum"
     "chart book"
     "depth tape"
@@ -140,6 +141,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
   margin:0 auto;
 }
 
+.panel--signal{ grid-area:signal; }
 .panel--momentum{ grid-area:momentum; }
 .panel--chart{ grid-area:chart; }
 .panel--book{ grid-area:book; }
@@ -281,6 +283,70 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .book__col::-webkit-scrollbar-thumb, .tape__body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
 .book__col::-webkit-scrollbar-track, .tape__body::-webkit-scrollbar-track{ background:transparent; }
 
+/* ============ 3-CANDLE H1 ENTRY SIGNAL ============ */
+.signal__inner{
+  display:flex; align-items:center; gap:24px; flex-wrap:wrap;
+  padding:16px 20px;
+}
+
+.signal-badge{
+  display:flex; align-items:center; gap:14px;
+  padding:14px 22px;
+  border-radius:var(--radius);
+  background:var(--panel-alt);
+  border:2px solid var(--border);
+  min-width:260px;
+  transition:background .3s, border-color .3s;
+}
+.signal-badge__icon{
+  font-size:26px; line-height:1;
+  width:42px; height:42px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--panel-raised);
+  flex-shrink:0;
+}
+.signal-badge__text{ display:flex; flex-direction:column; gap:2px; }
+.signal-badge__label{ font-family:var(--font-display); font-weight:700; font-size:18px; }
+.signal-badge__sub{ font-size:11px; color:var(--text-faint); }
+
+.signal-badge.buy{ background:var(--bid-row-tint); border-color:var(--bid); }
+.signal-badge.buy .signal-badge__icon{ color:var(--bid-bright); background:rgba(46,204,147,0.18); }
+.signal-badge.buy .signal-badge__label{ color:var(--bid-bright); }
+
+.signal-badge.sell{ background:var(--ask-row-tint); border-color:var(--ask); }
+.signal-badge.sell .signal-badge__icon{ color:var(--ask-bright); background:rgba(255,92,98,0.18); }
+.signal-badge.sell .signal-badge__label{ color:var(--ask-bright); }
+
+.signal-badge.none .signal-badge__label{ color:var(--text-dim); }
+
+.signal-candles{ display:flex; gap:8px; }
+.mini-candle{
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:8px 12px;
+  border-radius:var(--radius);
+  background:var(--panel-alt);
+  border:1px solid var(--border);
+  min-width:56px;
+}
+.mini-candle__arrow{ font-size:18px; }
+.mini-candle__label{ font-size:9px; color:var(--text-faint); }
+.mini-candle.up .mini-candle__arrow{ color:var(--bid-bright); }
+.mini-candle.down .mini-candle__arrow{ color:var(--ask-bright); }
+
+.signal-checklist{ display:flex; flex-direction:column; gap:4px; min-width:220px; }
+.signal-check{ font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-dim); }
+.signal-check span{ font-weight:700; width:14px; text-align:center; }
+.signal-check.yes{ color:var(--bid-bright); }
+.signal-check.yes span{ color:var(--bid-bright); }
+.signal-check.no{ color:var(--ask-bright); }
+.signal-check.no span{ color:var(--ask-bright); }
+.signal-check.hint{ color:var(--text-faint); }
+.signal-check.hint span{ color:var(--gold-bright); }
+
+.signal-live{ font-size:11px; color:var(--text-faint); flex-basis:100%; }
+.signal-live .up{ color:var(--bid-bright); }
+.signal-live .down{ color:var(--ask-bright); }
+
 /* ============ MOMENTUM & TREND ============ */
 .momentum__inner{
   display:flex; align-items:center; gap:28px;
@@ -403,6 +469,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
     grid-template-columns:1fr;
     grid-template-rows:auto;
     grid-template-areas:
+      "signal"
       "momentum"
       "chart"
       "book"
