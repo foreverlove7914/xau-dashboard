@@ -322,13 +322,14 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .signal-candles{ display:flex; gap:8px; }
 .mini-candle{
   display:flex; flex-direction:column; align-items:center; gap:3px;
-  padding:8px 12px;
+  padding:6px 12px 8px;
   border-radius:var(--radius);
   background:var(--panel-alt);
   border:1px solid var(--border);
   min-width:56px;
 }
-.mini-candle__arrow{ font-size:18px; }
+.mini-candle__svg{ width:32px; height:60px; }
+.mini-candle__arrow{ font-size:16px; }
 .mini-candle__label{ font-size:9px; color:var(--text-faint); }
 .mini-candle.up .mini-candle__arrow{ color:var(--bid-bright); }
 .mini-candle.down .mini-candle__arrow{ color:var(--ask-bright); }
