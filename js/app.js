@@ -577,9 +577,32 @@ function renderSignal(){
   const allGreen = colors.every(c => c === "hijau");
   const allRed = colors.every(c => c === "merah");
 
+const last3 = candleHistory.slice(-3);
+  const colors = last3.map(c => c.close >= c.open ? "hijau" : "merah");
+  const allGreen = colors.every(c => c === "hijau");
+  const allRed = colors.every(c => c === "merah");
+
+  // shared price scale across all 3 so relative candle sizes are comparable
+  const combinedHigh = Math.max(...last3.map(c => c.high));
+  const combinedLow = Math.min(...last3.map(c => c.low));
+  const range = Math.max(combinedHigh - combinedLow, 0.0001);
+  const svgH = 60, svgTop = 4, svgBottom = 56;
+  const scaleY = (price) => svgBottom - ((price - combinedLow) / range) * (svgBottom - svgTop);
+
   candlesEl.innerHTML = last3.map((c, i) => {
     const isGreen = c.close >= c.open;
+    const color = isGreen ? "#6bf0c2" : "#ff9599";
+    const yHigh = scaleY(c.high);
+    const yLow = scaleY(c.low);
+    const yOpen = scaleY(c.open);
+    const yClose = scaleY(c.close);
+    const bodyTop = Math.min(yOpen, yClose);
+    const bodyHeight = Math.max(Math.abs(yClose - yOpen), 2);
     return `<div class="mini-candle ${isGreen ? "up" : "down"}">
+      <svg viewBox="0 0 40 ${svgH}" class="mini-candle__svg">
+        <line x1="20" y1="${yHigh}" x2="20" y2="${yLow}" stroke="${color}" stroke-width="2"/>
+        <rect x="10" y="${bodyTop}" width="20" height="${bodyHeight}" fill="${color}"/>
+      </svg>
       <span class="mini-candle__arrow">${isGreen ? "▲" : "▼"}</span>
       <span class="mini-candle__label">H1-${3 - i}</span>
     </div>`;
