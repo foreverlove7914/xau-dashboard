@@ -187,7 +187,6 @@ function renderBook(){
     ...bids.map(b => b[1]), ...asks.map(a => a[1]), 0.0001
   );
 
-  // average size across all visible rows — a row well above this is flagged as a "wall"
   const allSizes = [...bids.map(b => b[1]), ...asks.map(a => a[1])];
   const avgSize = allSizes.reduce((a, b) => a + b, 0) / Math.max(allSizes.length, 1);
   const wallThreshold = Math.max(avgSize * WALL_MULTIPLIER, WALL_MIN_ABS);
@@ -234,9 +233,7 @@ function renderBook(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Demand / Supply zones — the single biggest resting order on each side */
-/* of the book right now. This is the order-book equivalent of "demand"  */
-/* (bids = buyers waiting) and "supply" (asks = sellers waiting).        */
+/* Demand / Supply zones                                                 */
 /* ---------------------------------------------------------------------- */
 function renderZones(bids, asks){
   const demandEl = document.getElementById("demandZonePrice");
@@ -280,7 +277,6 @@ function renderDepth(){
   const bids = book.bids;
   const asks = book.asks;
 
-  // cumulative volume arrays
   let cum = 0;
   const bidCum = bids.map(([p, q]) => { cum += q; return [p, cum]; });
   cum = 0;
@@ -528,10 +524,6 @@ function renderPressure(){
 
 /* ---------------------------------------------------------------------- */
 /* 3-candle H1 entry strategy                                             */
-/* Watches closed 1-hour candles from Binance. When the last 3 closed     */
-/* candles are all the same colour, that's the "entry" signal. We cross-  */
-/* check it against the Tren badge and the Pembeli/Penjual split so it    */
-/* isn't read in isolation.                                               */
 /* ---------------------------------------------------------------------- */
 function handleKline(d){
   const k = d.k;
@@ -577,12 +569,6 @@ function renderSignal(){
   const allGreen = colors.every(c => c === "hijau");
   const allRed = colors.every(c => c === "merah");
 
-const last3 = candleHistory.slice(-3);
-  const colors = last3.map(c => c.close >= c.open ? "hijau" : "merah");
-  const allGreen = colors.every(c => c === "hijau");
-  const allRed = colors.every(c => c === "merah");
-
-  // shared price scale across all 3 so relative candle sizes are comparable
   const combinedHigh = Math.max(...last3.map(c => c.high));
   const combinedLow = Math.min(...last3.map(c => c.low));
   const range = Math.max(combinedHigh - combinedLow, 0.0001);
