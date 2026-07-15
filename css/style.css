@@ -319,26 +319,26 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 
 .signal-badge.none .signal-badge__label{ color:var(--text-dim); }
 
-.signal-candles{ display:flex; gap:8px; }
-.mini-candle{
-  display:flex; flex-direction:column; align-items:center; gap:3px;
-  padding:8px 12px;
-  border-radius:var(--radius);
-  background:var(--panel-alt);
-  border:1px solid var(--border);
-  min-width:56px;
-}
-.mini-candle__arrow{ font-size:18px; }
-.mini-candle__label{ font-size:9px; color:var(--text-faint); }
-.mini-candle.up .mini-candle__arrow{ color:var(--bid-bright); }
-.mini-candle.down .mini-candle__arrow{ color:var(--ask-bright); }
 
 .signal-checklist{ display:flex; flex-direction:column; gap:4px; min-width:220px; }
 .signal-check{ font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-dim); }
 .signal-check span{ font-weight:700; width:14px; text-align:center; }
 .signal-check.yes{ color:var(--bid-bright); }
 .signal-check.yes span{ color:var(--bid-bright); }
-.signal-check.no{ color:var(--ask-bright); }
+.signal-check.no{ color:var(--as.signal-candles{ display:flex; gap:8px; }
+.mini-candle{
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:6px 12px 8px;
+  border-radius:var(--radius);
+  background:var(--panel-alt);
+  border:1px solid var(--border);
+  min-width:56px;
+}
+.mini-candle__svg{ width:32px; height:60px; }
+.mini-candle__arrow{ font-size:16px; }
+.mini-candle__label{ font-size:9px; color:var(--text-faint); }
+.mini-candle.up .mini-candle__arrow{ color:var(--bid-bright); }
+.mini-candle.down .mini-candle__arrow{ color:var(--ask-bright); }k-bright); }
 .signal-check.no span{ color:var(--ask-bright); }
 .signal-check.hint{ color:var(--text-faint); }
 .signal-check.hint span{ color:var(--gold-bright); }
