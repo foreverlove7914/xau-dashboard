@@ -17,7 +17,7 @@ const TV_SYMBOL = "BINANCE:PAXGUSDT.P";    // TradingView chart symbol
 // @depth belongs to /public. @markPrice, @aggTrade and @ticker belong to /market.
 // Unrouted connections now only receive /public data, so we need two sockets.
 const WS_PUBLIC_URL = `wss://fstream.binance.com/public/stream?streams=${SYMBOL}@depth20@100ms`;
-const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker`;
+const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker/${SYMBOL}@kline_1h`;
 
 const DEPTH_ROWS = 20;      // rows shown per side in the order book list (max available from depth20 stream)
 const TAPE_MAX_ROWS = 40;   // trades kept in the tape
@@ -39,6 +39,12 @@ const TREND_HYSTERESIS = 0.00006; // must clear the flip point by this much to a
 const PRICE_TICK_HISTORY = 400;
 
 let trendState = null; // "up" | "down" — sticky once set, no more "flat" wobble
+let lastBuyPct = 50;
+let lastSellPct = 50;
+
+// --- 3-candle H1 entry strategy ---
+let candleHistory = []; // closed H1 candles: { open, close, high, low }
+let currentCandle = null; // the still-forming H1 candle (preview only)
 
 let wsPublic = null;
 let wsMarket = null;
@@ -122,6 +128,7 @@ function connectMarket(){
     if (stream.endsWith("@markPrice@1s")) handleMarkPrice(data);
     else if (stream.endsWith("@aggTrade")) handleTrade(data);
     else if (stream.endsWith("@ticker")) handleTicker(data);
+    else if (stream.endsWith("@kline_1h")) handleKline(data);
   };
 
   wsMarket.onerror = () => { connState.market = "error"; updateConnLabel(); };
@@ -286,13 +293,8 @@ function renderDepth(){
   const priceRange = Math.max(maxPrice - minPrice, 0.0001);
 
   const xFor = (price) => ((price - minPrice) / priceRange) * w;
-  // each side is scaled to its OWN max so a strong wall on one side never
-  // flattens the other side into invisibility — this favours "can I see
-  // the shape of both sides" over "which side has more total liquidity"
-  // (that imbalance is already visible in the order book + footprint).
   const yForSide = (vol, sideMax) => h - (vol / sideMax) * (h - 18) - 4;
 
-  // grid baseline
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -300,12 +302,9 @@ function renderDepth(){
   ctx.lineTo(w, h - 4);
   ctx.stroke();
 
-  // bid area (gold-green gradient, drawn left -> mid)
   drawArea(bidCum, xFor, (v) => yForSide(v, maxCumBid), h, "rgba(34,168,120,0.55)", "rgba(34,168,120,0.02)", "#3fd39c");
-  // ask area (red gradient, drawn mid -> right)
   drawArea(askCum, xFor, (v) => yForSide(v, maxCumAsk), h, "rgba(214,75,79,0.55)", "rgba(214,75,79,0.02)", "#f26b6f");
 
-  // mid price marker
   if (lastPrice){
     const mx = xFor(lastPrice);
     ctx.strokeStyle = "#cf9f3f";
@@ -377,7 +376,7 @@ function handleTicker(d){
 function handleTrade(d){
   const price = parseFloat(d.p);
   const qty = parseFloat(d.q);
-  const isSell = d.m === true; // buyer is maker -> aggressor sold
+  const isSell = d.m === true;
   setLastPrice(price);
 
   tradeHistory.push({ price, qty, isSell });
@@ -400,9 +399,7 @@ function handleTrade(d){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Footprint — aggregates recent trades into buy/sell volume per price   */
-/* bucket, centred on the current price. Classic footprint-chart reading:*/
-/* green (buy) bar right, red (sell) bar left, delta = buy minus sell.   */
+/* Footprint                                                              */
 /* ---------------------------------------------------------------------- */
 function renderFootprint(){
   const body = document.getElementById("footprintBody");
@@ -412,7 +409,7 @@ function renderFootprint(){
   }
 
   const bucketOf = (price) => Math.round(price / FOOTPRINT_BUCKET) * FOOTPRINT_BUCKET;
-  const buckets = new Map(); // bucketPrice -> { buy, sell }
+  const buckets = new Map();
 
   for (const t of tradeHistory){
     const b = bucketOf(t.price);
@@ -466,7 +463,7 @@ function setLastPrice(price){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Trend indicator — fast vs slow average of recent tick prices          */
+/* Trend indicator                                                       */
 /* ---------------------------------------------------------------------- */
 function renderTrend(){
   const badge = document.getElementById("trendBadge");
@@ -487,8 +484,6 @@ function renderTrend(){
   const slowAvg = avg(priceTicks.slice(-Math.min(TREND_SLOW_WINDOW, priceTicks.length)));
   const diffPct = (fastAvg - slowAvg) / slowAvg;
 
-  // sticky direction: only flips once the gap clearly crosses to the other
-  // side by more than the hysteresis buffer — stops rapid up/down/up wobble
   if (trendState === null){
     trendState = diffPct >= 0 ? "up" : "down";
   } else if (trendState === "up" && diffPct < -TREND_HYSTERESIS){
@@ -511,8 +506,7 @@ function renderTrend(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Buyer vs seller pressure — share of buy vs sell volume in recent      */
-/* trade history (same window that feeds the footprint).                 */
+/* Buyer vs seller pressure                                              */
 /* ---------------------------------------------------------------------- */
 function renderPressure(){
   if (tradeHistory.length === 0) return;
@@ -523,11 +517,121 @@ function renderPressure(){
   const total = buyVol + sellVol || 1;
   const buyPct = (buyVol / total) * 100;
   const sellPct = 100 - buyPct;
+  lastBuyPct = buyPct;
+  lastSellPct = sellPct;
 
   document.getElementById("buyerFill").style.width = `${buyPct}%`;
   document.getElementById("sellerFill").style.width = `${sellPct}%`;
   document.getElementById("buyerPct").textContent = `${buyPct.toFixed(0)}%`;
   document.getElementById("sellerPct").textContent = `${sellPct.toFixed(0)}%`;
+}
+
+/* ---------------------------------------------------------------------- */
+/* 3-candle H1 entry strategy                                             */
+/* Watches closed 1-hour candles from Binance. When the last 3 closed     */
+/* candles are all the same colour, that's the "entry" signal. We cross-  */
+/* check it against the Tren badge and the Pembeli/Penjual split so it    */
+/* isn't read in isolation.                                               */
+/* ---------------------------------------------------------------------- */
+function handleKline(d){
+  const k = d.k;
+  const candle = {
+    open: parseFloat(k.o),
+    close: parseFloat(k.c),
+    high: parseFloat(k.h),
+    low: parseFloat(k.l)
+  };
+  if (k.x){
+    candleHistory.push(candle);
+    if (candleHistory.length > 10) candleHistory.shift();
+    currentCandle = null;
+  } else {
+    currentCandle = candle;
+  }
+  renderSignal();
+}
+
+function renderSignal(){
+  const badge = document.getElementById("signalBadge");
+  const icon = document.getElementById("signalIcon");
+  const label = document.getElementById("signalLabel");
+  const sub = document.getElementById("signalSub");
+  const candlesEl = document.getElementById("signalCandles");
+  const checklistEl = document.getElementById("signalChecklist");
+  const liveEl = document.getElementById("signalLive");
+  if (!badge) return;
+
+  if (candleHistory.length < 3){
+    badge.className = "signal-badge";
+    icon.textContent = "…";
+    label.textContent = "Mengumpul candle H1…";
+    sub.textContent = `${candleHistory.length}/3 candle tertutup terkumpul`;
+    candlesEl.innerHTML = "";
+    checklistEl.innerHTML = "";
+    liveEl.textContent = "";
+    return;
+  }
+
+  const last3 = candleHistory.slice(-3);
+  const colors = last3.map(c => c.close >= c.open ? "hijau" : "merah");
+  const allGreen = colors.every(c => c === "hijau");
+  const allRed = colors.every(c => c === "merah");
+
+  candlesEl.innerHTML = last3.map((c, i) => {
+    const isGreen = c.close >= c.open;
+    return `<div class="mini-candle ${isGreen ? "up" : "down"}">
+      <span class="mini-candle__arrow">${isGreen ? "▲" : "▼"}</span>
+      <span class="mini-candle__label">H1-${3 - i}</span>
+    </div>`;
+  }).join("");
+
+  badge.className = "signal-badge";
+  if (allGreen){
+    badge.classList.add("buy");
+    icon.textContent = "▲";
+    label.textContent = "ENTRY BELI";
+    sub.textContent = "3 candle H1 berturut-turut HIJAU";
+  } else if (allRed){
+    badge.classList.add("sell");
+    icon.textContent = "▼";
+    label.textContent = "ENTRY JUAL";
+    sub.textContent = "3 candle H1 berturut-turut MERAH";
+  } else {
+    badge.classList.add("none");
+    icon.textContent = "○";
+    label.textContent = "TIADA ISYARAT";
+    sub.textContent = "Candle H1 tercampur — tunggu 3 sama warna";
+  }
+
+  if (allGreen || allRed){
+    const wantUp = allGreen;
+    const trendOk = wantUp ? trendState === "up" : trendState === "down";
+    const pressureOk = wantUp ? lastBuyPct > 55 : lastSellPct > 55;
+    const refPrice = wantUp
+      ? Math.min(...last3.map(c => c.low))
+      : Math.max(...last3.map(c => c.high));
+
+    checklistEl.innerHTML = `
+      <div class="signal-check ${trendOk ? "yes" : "no"}">
+        <span>${trendOk ? "✓" : "✗"}</span> Badge Tren sejajar (${trendState === "up" ? "NAIK" : "TURUN"})
+      </div>
+      <div class="signal-check ${pressureOk ? "yes" : "no"}">
+        <span>${pressureOk ? "✓" : "✗"}</span> ${wantUp ? "Pembeli" : "Penjual"} >55% (${wantUp ? lastBuyPct.toFixed(0) : lastSellPct.toFixed(0)}%)
+      </div>
+      <div class="signal-check hint">
+        <span>ℹ</span> Rujukan stop-loss: ${wantUp ? "bawah" : "atas"} ${fmt(refPrice)} (${wantUp ? "low" : "high"} 3 candle)
+      </div>
+    `;
+  } else {
+    checklistEl.innerHTML = "";
+  }
+
+  if (currentCandle){
+    const isGreen = currentCandle.close >= currentCandle.open;
+    liveEl.innerHTML = `Candle semasa (belum tutup): <span class="${isGreen ? "up" : "down"}">${isGreen ? "▲ hijau" : "▼ merah"} — belum sah</span>`;
+  } else {
+    liveEl.textContent = "";
+  }
 }
 
 /* ---------------------------------------------------------------------- */
