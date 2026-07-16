@@ -189,6 +189,7 @@ function renderBook(){
     ...bids.map(b => b[1]), ...asks.map(a => a[1]), 0.0001
   );
 
+  // average size across all visible rows — a row well above this is flagged as a "wall"
   const allSizes = [...bids.map(b => b[1]), ...asks.map(a => a[1])];
   const avgSize = allSizes.reduce((a, b) => a + b, 0) / Math.max(allSizes.length, 1);
   const wallThreshold = Math.max(avgSize * WALL_MULTIPLIER, WALL_MIN_ABS);
@@ -235,7 +236,9 @@ function renderBook(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Demand / Supply zones                                                 */
+/* Demand / Supply zones — the single biggest resting order on each side */
+/* of the book right now. This is the order-book equivalent of "demand"  */
+/* (bids = buyers waiting) and "supply" (asks = sellers waiting).        */
 /* ---------------------------------------------------------------------- */
 function renderZones(bids, asks){
   const demandEl = document.getElementById("demandZonePrice");
@@ -281,6 +284,7 @@ function renderDepth(){
   const bids = book.bids;
   const asks = book.asks;
 
+  // cumulative volume arrays
   let cum = 0;
   const bidCum = bids.map(([p, q]) => { cum += q; return [p, cum]; });
   cum = 0;
@@ -293,8 +297,13 @@ function renderDepth(){
   const priceRange = Math.max(maxPrice - minPrice, 0.0001);
 
   const xFor = (price) => ((price - minPrice) / priceRange) * w;
+  // each side is scaled to its OWN max so a strong wall on one side never
+  // flattens the other side into invisibility — this favours "can I see
+  // the shape of both sides" over "which side has more total liquidity"
+  // (that imbalance is already visible in the order book + footprint).
   const yForSide = (vol, sideMax) => h - (vol / sideMax) * (h - 18) - 4;
 
+  // grid baseline
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -302,9 +311,12 @@ function renderDepth(){
   ctx.lineTo(w, h - 4);
   ctx.stroke();
 
+  // bid area (gold-green gradient, drawn left -> mid)
   drawArea(bidCum, xFor, (v) => yForSide(v, maxCumBid), h, "rgba(34,168,120,0.55)", "rgba(34,168,120,0.02)", "#3fd39c");
+  // ask area (red gradient, drawn mid -> right)
   drawArea(askCum, xFor, (v) => yForSide(v, maxCumAsk), h, "rgba(214,75,79,0.55)", "rgba(214,75,79,0.02)", "#f26b6f");
 
+  // mid price marker
   if (lastPrice){
     const mx = xFor(lastPrice);
     ctx.strokeStyle = "#cf9f3f";
@@ -399,7 +411,9 @@ function handleTrade(d){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Footprint                                                              */
+/* Footprint — aggregates recent trades into buy/sell volume per price   */
+/* bucket, centred on the current price. Classic footprint-chart reading:*/
+/* green (buy) bar right, red (sell) bar left, delta = buy minus sell.   */
 /* ---------------------------------------------------------------------- */
 function renderFootprint(){
   const body = document.getElementById("footprintBody");
@@ -409,7 +423,7 @@ function renderFootprint(){
   }
 
   const bucketOf = (price) => Math.round(price / FOOTPRINT_BUCKET) * FOOTPRINT_BUCKET;
-  const buckets = new Map();
+  const buckets = new Map(); // bucketPrice -> { buy, sell }
 
   for (const t of tradeHistory){
     const b = bucketOf(t.price);
@@ -463,7 +477,7 @@ function setLastPrice(price){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Trend indicator                                                       */
+/* Trend indicator — fast vs slow average of recent tick prices          */
 /* ---------------------------------------------------------------------- */
 function renderTrend(){
   const badge = document.getElementById("trendBadge");
@@ -484,6 +498,8 @@ function renderTrend(){
   const slowAvg = avg(priceTicks.slice(-Math.min(TREND_SLOW_WINDOW, priceTicks.length)));
   const diffPct = (fastAvg - slowAvg) / slowAvg;
 
+  // sticky direction: only flips once the gap clearly crosses to the other
+  // side by more than the hysteresis buffer — stops rapid up/down/up wobble
   if (trendState === null){
     trendState = diffPct >= 0 ? "up" : "down";
   } else if (trendState === "up" && diffPct < -TREND_HYSTERESIS){
@@ -506,7 +522,8 @@ function renderTrend(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* Buyer vs seller pressure                                              */
+/* Buyer vs seller pressure — share of buy vs sell volume in recent      */
+/* trade history (same window that feeds the footprint).                 */
 /* ---------------------------------------------------------------------- */
 function renderPressure(){
   if (tradeHistory.length === 0) return;
@@ -534,13 +551,17 @@ function renderPressure(){
 /* isn't read in isolation.                                               */
 /* ---------------------------------------------------------------------- */
 async function fetchInitialCandles(){
+  // Backfills recent closed H1 candles via REST on page load. Mobile tabs
+  // often get discarded in the background (screen lock, app switch), which
+  // wipes all in-memory JS state — without this, the signal would have to
+  // rebuild from zero every single time that happens.
   try {
     const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL.toUpperCase()}&interval=1h&limit=6`;
     const res = await fetch(url);
     const rows = await res.json();
     const now = Date.now();
     candleHistory = rows
-      .filter(k => k[6] < now)
+      .filter(k => k[6] < now) // closeTime in the past = candle is actually closed
       .map(k => ({
         open: parseFloat(k[1]),
         high: parseFloat(k[2]),
@@ -550,6 +571,7 @@ async function fetchInitialCandles(){
     renderSignal();
   } catch (e){
     console.error("Gagal tarik sejarah candle H1:", e);
+    // not fatal — live @kline_1h stream will still fill it in over time
   }
 }
 function handleKline(d){
@@ -561,10 +583,12 @@ function handleKline(d){
     low: parseFloat(k.l)
   };
   if (k.x){
+    // candle just closed — lock it in
     candleHistory.push(candle);
     if (candleHistory.length > 10) candleHistory.shift();
     currentCandle = null;
   } else {
+    // still forming — preview only, not used for the signal itself
     currentCandle = candle;
   }
   renderSignal();
@@ -576,6 +600,7 @@ function renderSignal(){
   const label = document.getElementById("signalLabel");
   const sub = document.getElementById("signalSub");
   const candlesEl = document.getElementById("signalCandles");
+  const rangeEl = document.getElementById("signalRange");
   const checklistEl = document.getElementById("signalChecklist");
   const liveEl = document.getElementById("signalLive");
   if (!badge) return;
@@ -586,6 +611,7 @@ function renderSignal(){
     label.textContent = "Mengumpul candle H1…";
     sub.textContent = `${candleHistory.length}/3 candle tertutup terkumpul`;
     candlesEl.innerHTML = "";
+    rangeEl.textContent = "";
     checklistEl.innerHTML = "";
     liveEl.textContent = "";
     return;
@@ -596,8 +622,11 @@ function renderSignal(){
   const allGreen = colors.every(c => c === "hijau");
   const allRed = colors.every(c => c === "merah");
 
+  // shared price scale across all 3 so relative candle sizes are comparable
   const combinedHigh = Math.max(...last3.map(c => c.high));
   const combinedLow = Math.min(...last3.map(c => c.low));
+  rangeEl.innerHTML = `Julat 3 candle terkini: Rendah <b>${fmt(combinedLow)}</b> · Tinggi <b>${fmt(combinedHigh)}</b>`;
+
   const range = Math.max(combinedHigh - combinedLow, 0.0001);
   const svgH = 60, svgTop = 4, svgBottom = 56;
   const scaleY = (price) => svgBottom - ((price - combinedLow) / range) * (svgBottom - svgTop);
@@ -637,6 +666,9 @@ function renderSignal(){
     sub.textContent = "Candle H1 tercampur — tunggu 3 sama warna";
   }
 
+  // confluence checklist + confidence score against indicators we already
+  // compute elsewhere. This is a technical confluence score, not a
+  // position-sizing or "how much to buy" instruction.
   if (allGreen || allRed){
     const wantUp = allGreen;
     const trendOk = wantUp ? trendState === "up" : trendState === "down";
@@ -646,6 +678,7 @@ function renderSignal(){
       ? Math.min(...last3.map(c => c.low))
       : Math.max(...last3.map(c => c.high));
 
+    // 3 weighted factors -> single 0-100% confluence score
     const trendScore = trendOk ? 100 : 0;
     const pressureScore = Math.max(0, Math.min(100, (pressureVal - 50) * 2));
     const zoneFavor = wantUp ? lastDemandSize : lastSupplySize;
