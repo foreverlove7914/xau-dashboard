@@ -338,6 +338,11 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .mini-candle.down .mini-candle__arrow{ color:var(--ask-bright); }
 
 .signal-checklist{ display:flex; flex-direction:column; gap:4px; min-width:220px; }
+.signal-range{
+  font-size:11px; color:var(--text-dim); flex-basis:100%;
+  padding:4px 0;
+}
+.signal-range b{ color:var(--gold-bright); font-variant-numeric:tabular-nums; }
 .signal-check{ font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-dim); }
 .signal-check span{ font-weight:700; width:14px; text-align:center; }
 .signal-check.yes{ color:var(--bid-bright); }
