@@ -308,6 +308,9 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .signal-badge__text{ display:flex; flex-direction:column; gap:2px; }
 .signal-badge__label{ font-family:var(--font-display); font-weight:700; font-size:18px; }
 .signal-badge__sub{ font-size:11px; color:var(--text-faint); }
+.confidence-inline{ color:var(--text-dim); }
+.confidence-inline.yes{ color:var(--bid-bright); }
+.confidence-inline.no{ color:var(--ask-bright); }
 
 .signal-badge.buy{ background:var(--bid-row-tint); border-color:var(--bid); }
 .signal-badge.buy .signal-badge__icon{ color:var(--bid-bright); background:rgba(46,204,147,0.18); }
