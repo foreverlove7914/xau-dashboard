@@ -425,6 +425,10 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .zone-badge--demand .zone-badge__price{ color:var(--bid-bright); }
 .zone-badge--supply{ border-left:3px solid var(--ask); }
 .zone-badge--supply .zone-badge__price{ color:var(--ask-bright); }
+.zone-badge--entry{ border-left:3px solid var(--gold); }
+.zone-badge--entry .zone-badge__price{ color:var(--gold-bright); }
+.zone-badge--stop{ border-left:3px solid var(--ask); }
+.zone-badge--stop .zone-badge__price{ color:var(--ask-bright); }
 .footprint__cols{
   display:grid; grid-template-columns:1fr 100px 1fr 90px;
   padding:6px 14px; font-size:10px; color:var(--text-dim);
