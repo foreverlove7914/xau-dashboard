@@ -665,6 +665,11 @@ function renderSignal(){
   if (upVotes >= 2) wantUp = true;
   else if (downVotes >= 2) wantUp = false;
 
+  const entryPriceEl = document.getElementById("entryPriceValue");
+  const entryHintEl = document.getElementById("entryPriceHint");
+  const stopPriceEl = document.getElementById("stopLossValue");
+  const stopHintEl = document.getElementById("stopLossHint");
+
   badge.className = "signal-badge";
   if (wantUp === true){
     badge.classList.add("buy");
@@ -679,6 +684,10 @@ function renderSignal(){
     icon.textContent = "○";
     label.textContent = "TIADA ISYARAT";
     sub.textContent = "Tempoh masa tak sejajar — perlu 2 dari 3 (M15/H1/H4) sama arah";
+    entryPriceEl.textContent = "—";
+    entryHintEl.textContent = "Menunggu isyarat";
+    stopPriceEl.textContent = "—";
+    stopHintEl.textContent = "Menunggu isyarat";
   }
 
   if (wantUp !== null){
@@ -720,6 +729,13 @@ function renderSignal(){
       ? Math.min(...refHistory.map(c => c.low))
       : Math.max(...refHistory.map(c => c.high));
     const refLabel = TIMEFRAMES.find(t => t.key === refTf)?.label || "H1";
+
+    // fill the persistent entry / stop-loss badges
+    entryPriceEl.textContent = fmt(lastPrice);
+    entryHintEl.textContent = "Harga semasa isyarat";
+    stopPriceEl.textContent = fmt(refPrice);
+    const stopDistance = Math.abs(lastPrice - refPrice);
+    stopHintEl.textContent = `${refLabel} · jarak ${fmt(stopDistance)}`;
 
     checklistEl.innerHTML = `
       <div class="signal-check yes">
