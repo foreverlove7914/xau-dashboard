@@ -17,7 +17,7 @@ const TV_SYMBOL = "BINANCE:PAXGUSDT.P";    // TradingView chart symbol
 // @depth belongs to /public. @markPrice, @aggTrade and @ticker belong to /market.
 // Unrouted connections now only receive /public data, so we need two sockets.
 const WS_PUBLIC_URL = `wss://fstream.binance.com/public/stream?streams=${SYMBOL}@depth20@100ms`;
-const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker/${SYMBOL}@kline_1h`;
+const WS_MARKET_URL = `wss://fstream.binance.com/market/stream?streams=${SYMBOL}@markPrice@1s/${SYMBOL}@aggTrade/${SYMBOL}@ticker/${SYMBOL}@kline_15m/${SYMBOL}@kline_1h/${SYMBOL}@kline_4h`;
 
 const DEPTH_ROWS = 20;      // rows shown per side in the order book list (max available from depth20 stream)
 const TAPE_MAX_ROWS = 40;   // trades kept in the tape
@@ -44,9 +44,17 @@ let lastSellPct = 50;
 let lastDemandSize = 0;
 let lastSupplySize = 0;
 
-// --- 3-candle H1 entry strategy ---
-let candleHistory = []; // closed H1 candles: { open, close, high, low }
-let currentCandle = null; // the still-forming H1 candle (preview only)
+// --- 7 Candle / 7 Naga entry technique, across 3 timeframes ---
+const TIMEFRAMES = [
+  { key: "m15", label: "M15", interval: "15m" },
+  { key: "h1",  label: "H1",  interval: "1h"  },
+  { key: "h4",  label: "H4",  interval: "4h"  }
+];
+let tfData = {
+  m15: { history: [], current: null },
+  h1:  { history: [], current: null },
+  h4:  { history: [], current: null }
+};
 
 let wsPublic = null;
 let wsMarket = null;
@@ -130,7 +138,9 @@ function connectMarket(){
     if (stream.endsWith("@markPrice@1s")) handleMarkPrice(data);
     else if (stream.endsWith("@aggTrade")) handleTrade(data);
     else if (stream.endsWith("@ticker")) handleTicker(data);
-    else if (stream.endsWith("@kline_1h")) handleKline(data);
+    else if (stream.endsWith("@kline_15m")) handleKline("m15", data);
+    else if (stream.endsWith("@kline_1h")) handleKline("h1", data);
+    else if (stream.endsWith("@kline_4h")) handleKline("h4", data);
   };
 
   wsMarket.onerror = () => { connState.market = "error"; updateConnLabel(); };
@@ -297,13 +307,8 @@ function renderDepth(){
   const priceRange = Math.max(maxPrice - minPrice, 0.0001);
 
   const xFor = (price) => ((price - minPrice) / priceRange) * w;
-  // each side is scaled to its OWN max so a strong wall on one side never
-  // flattens the other side into invisibility — this favours "can I see
-  // the shape of both sides" over "which side has more total liquidity"
-  // (that imbalance is already visible in the order book + footprint).
   const yForSide = (vol, sideMax) => h - (vol / sideMax) * (h - 18) - 4;
 
-  // grid baseline
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -311,12 +316,9 @@ function renderDepth(){
   ctx.lineTo(w, h - 4);
   ctx.stroke();
 
-  // bid area (gold-green gradient, drawn left -> mid)
   drawArea(bidCum, xFor, (v) => yForSide(v, maxCumBid), h, "rgba(34,168,120,0.55)", "rgba(34,168,120,0.02)", "#3fd39c");
-  // ask area (red gradient, drawn mid -> right)
   drawArea(askCum, xFor, (v) => yForSide(v, maxCumAsk), h, "rgba(214,75,79,0.55)", "rgba(214,75,79,0.02)", "#f26b6f");
 
-  // mid price marker
   if (lastPrice){
     const mx = xFor(lastPrice);
     ctx.strokeStyle = "#cf9f3f";
@@ -498,8 +500,6 @@ function renderTrend(){
   const slowAvg = avg(priceTicks.slice(-Math.min(TREND_SLOW_WINDOW, priceTicks.length)));
   const diffPct = (fastAvg - slowAvg) / slowAvg;
 
-  // sticky direction: only flips once the gap clearly crosses to the other
-  // side by more than the hysteresis buffer — stops rapid up/down/up wobble
   if (trendState === null){
     trendState = diffPct >= 0 ? "up" : "down";
   } else if (trendState === "up" && diffPct < -TREND_HYSTERESIS){
@@ -544,37 +544,43 @@ function renderPressure(){
 }
 
 /* ---------------------------------------------------------------------- */
-/* 3-candle H1 entry strategy                                             */
-/* Watches closed 1-hour candles from Binance. When the last 3 closed     */
-/* candles are all the same colour, that's the "entry" signal. We cross-  */
-/* check it against the Tren badge and the Pembeli/Penjual split so it    */
-/* isn't read in isolation.                                               */
+/* 7 Candle / 7 Naga entry technique — across M15, H1 and H4              */
+/* For each timeframe we look at the last 7 CLOSED candles:               */
+/*   7/7 same colour  -> "7 NAGA" (strongest signal on that timeframe)    */
+/*   5-6/7 same colour -> "Kukuh" (moderate signal)                       */
+/*   otherwise         -> "Campuran" (no lean on that timeframe)          */
+/* The overall entry badge fires when at least 2 of the 3 timeframes      */
+/* lean the same direction — cross-timeframe confluence, not just one     */
+/* chart in isolation.                                                    */
 /* ---------------------------------------------------------------------- */
 async function fetchInitialCandles(){
-  // Backfills recent closed H1 candles via REST on page load. Mobile tabs
-  // often get discarded in the background (screen lock, app switch), which
-  // wipes all in-memory JS state — without this, the signal would have to
-  // rebuild from zero every single time that happens.
-  try {
-    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL.toUpperCase()}&interval=1h&limit=6`;
-    const res = await fetch(url);
-    const rows = await res.json();
-    const now = Date.now();
-    candleHistory = rows
-      .filter(k => k[6] < now) // closeTime in the past = candle is actually closed
-      .map(k => ({
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4])
-      }));
-    renderSignal();
-  } catch (e){
-    console.error("Gagal tarik sejarah candle H1:", e);
-    // not fatal — live @kline_1h stream will still fill it in over time
+  // Backfills recent closed candles via REST on page load, for every
+  // timeframe. Mobile tabs often get discarded in the background (screen
+  // lock, app switch), wiping all in-memory JS state — without this the
+  // signal would have to rebuild from zero every single time that happens.
+  for (const tf of TIMEFRAMES){
+    try {
+      const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL.toUpperCase()}&interval=${tf.interval}&limit=9`;
+      const res = await fetch(url);
+      const rows = await res.json();
+      const now = Date.now();
+      tfData[tf.key].history = rows
+        .filter(k => k[6] < now) // closeTime in the past = candle is actually closed
+        .map(k => ({
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4])
+        }));
+    } catch (e){
+      console.error(`Gagal tarik sejarah candle ${tf.label}:`, e);
+      // not fatal — the live kline stream will still fill it in over time
+    }
   }
+  renderSignal();
 }
-function handleKline(d){
+
+function handleKline(tfKey, d){
   const k = d.k;
   const candle = {
     open: parseFloat(k.o),
@@ -582,16 +588,28 @@ function handleKline(d){
     high: parseFloat(k.h),
     low: parseFloat(k.l)
   };
+  const slot = tfData[tfKey];
   if (k.x){
-    // candle just closed — lock it in
-    candleHistory.push(candle);
-    if (candleHistory.length > 10) candleHistory.shift();
-    currentCandle = null;
+    slot.history.push(candle);
+    if (slot.history.length > 12) slot.history.shift();
+    slot.current = null;
   } else {
-    // still forming — preview only, not used for the signal itself
-    currentCandle = candle;
+    slot.current = candle;
   }
   renderSignal();
+}
+
+// Classifies one timeframe's last 7 closed candles.
+function evalTimeframe(history){
+  if (history.length < 7) return { state: "collecting", count: history.length };
+  const last7 = history.slice(-7);
+  const greenCount = last7.filter(c => c.close >= c.open).length;
+  const redCount = 7 - greenCount;
+  if (greenCount === 7) return { state: "naga", dir: "up", last7 };
+  if (redCount === 7) return { state: "naga", dir: "down", last7 };
+  if (greenCount >= 5) return { state: "kukuh", dir: "up", last7 };
+  if (redCount >= 5) return { state: "kukuh", dir: "down", last7 };
+  return { state: "campuran", last7 };
 }
 
 function renderSignal(){
@@ -599,63 +617,60 @@ function renderSignal(){
   const icon = document.getElementById("signalIcon");
   const label = document.getElementById("signalLabel");
   const sub = document.getElementById("signalSub");
-  const candlesEl = document.getElementById("signalCandles");
-  const rangeEl = document.getElementById("signalRange");
+  const tfGridEl = document.getElementById("tfGrid");
   const checklistEl = document.getElementById("signalChecklist");
   const liveEl = document.getElementById("signalLive");
   if (!badge) return;
 
-  if (candleHistory.length < 3){
-    badge.className = "signal-badge";
-    icon.textContent = "…";
-    label.textContent = "Mengumpul candle H1…";
-    sub.textContent = `${candleHistory.length}/3 candle tertutup terkumpul`;
-    candlesEl.innerHTML = "";
-    rangeEl.textContent = "";
-    checklistEl.innerHTML = "";
-    liveEl.textContent = "";
-    return;
-  }
+  const evals = {};
+  for (const tf of TIMEFRAMES) evals[tf.key] = evalTimeframe(tfData[tf.key].history);
 
-  const last3 = candleHistory.slice(-3);
-  const colors = last3.map(c => c.close >= c.open ? "hijau" : "merah");
-  const allGreen = colors.every(c => c === "hijau");
-  const allRed = colors.every(c => c === "merah");
-
-  // shared price scale across all 3 so relative candle sizes are comparable
-  const combinedHigh = Math.max(...last3.map(c => c.high));
-  const combinedLow = Math.min(...last3.map(c => c.low));
-  rangeEl.innerHTML = `Julat 3 candle terkini: Rendah <b>${fmt(combinedLow)}</b> · Tinggi <b>${fmt(combinedHigh)}</b>`;
-
-  const range = Math.max(combinedHigh - combinedLow, 0.0001);
-  const svgH = 60, svgTop = 4, svgBottom = 56;
-  const scaleY = (price) => svgBottom - ((price - combinedLow) / range) * (svgBottom - svgTop);
-
-  candlesEl.innerHTML = last3.map((c, i) => {
-    const isGreen = c.close >= c.open;
-    const color = isGreen ? "#6bf0c2" : "#ff9599";
-    const yHigh = scaleY(c.high);
-    const yLow = scaleY(c.low);
-    const yOpen = scaleY(c.open);
-    const yClose = scaleY(c.close);
-    const bodyTop = Math.min(yOpen, yClose);
-    const bodyHeight = Math.max(Math.abs(yClose - yOpen), 2);
-    return `<div class="mini-candle ${isGreen ? "up" : "down"}">
-      <svg viewBox="0 0 40 ${svgH}" class="mini-candle__svg">
-        <line x1="20" y1="${yHigh}" x2="20" y2="${yLow}" stroke="${color}" stroke-width="2"/>
-        <rect x="10" y="${bodyTop}" width="20" height="${bodyHeight}" fill="${color}"/>
-      </svg>
-      <span class="mini-candle__arrow">${isGreen ? "▲" : "▼"}</span>
-      <span class="mini-candle__label">H1-${3 - i}</span>
+  // render the 3 timeframe cards
+  tfGridEl.innerHTML = TIMEFRAMES.map(tf => {
+    const ev = evals[tf.key];
+    if (ev.state === "collecting"){
+      return `<div class="tf-card collecting">
+        <div class="tf-card__label">${tf.label}</div>
+        <div class="tf-card__status">Mengumpul ${ev.count}/7</div>
+      </div>`;
+    }
+    const dots = ev.last7.map(c => {
+      const isGreen = c.close >= c.open;
+      return `<span class="tf-dot ${isGreen ? "up" : "down"}"></span>`;
+    }).join("");
+    const stateLabel = ev.state === "naga"
+      ? `7 NAGA ${ev.dir === "up" ? "▲" : "▼"}`
+      : ev.state === "kukuh"
+      ? `Kukuh ${ev.dir === "up" ? "▲" : "▼"}`
+      : "Campuran";
+    const cardClass = ev.state === "campuran" ? "neutral" : ev.dir;
+    return `<div class="tf-card ${cardClass}">
+      <div class="tf-card__label">${tf.label}</div>
+      <div class="tf-card__dots">${dots}</div>
+      <div class="tf-card__status">${stateLabel}</div>
     </div>`;
   }).join("");
 
+  // overall vote across the 3 timeframes
+  const dirs = TIMEFRAMES.map(tf => evals[tf.key].dir).filter(Boolean);
+  const upVotes = dirs.filter(d => d === "up").length;
+  const downVotes = dirs.filter(d => d === "down").length;
+  const nagaWinDir = TIMEFRAMES.some(tf => evals[tf.key].state === "naga" && evals[tf.key].dir === "up")
+    ? "up"
+    : TIMEFRAMES.some(tf => evals[tf.key].state === "naga" && evals[tf.key].dir === "down")
+    ? "down"
+    : null;
+
+  let wantUp = null;
+  if (upVotes >= 2) wantUp = true;
+  else if (downVotes >= 2) wantUp = false;
+
   badge.className = "signal-badge";
-  if (allGreen){
+  if (wantUp === true){
     badge.classList.add("buy");
     icon.textContent = "▲";
     label.textContent = "ENTRY BELI";
-  } else if (allRed){
+  } else if (wantUp === false){
     badge.classList.add("sell");
     icon.textContent = "▼";
     label.textContent = "ENTRY JUAL";
@@ -663,38 +678,53 @@ function renderSignal(){
     badge.classList.add("none");
     icon.textContent = "○";
     label.textContent = "TIADA ISYARAT";
-    sub.textContent = "Candle H1 tercampur — tunggu 3 sama warna";
+    sub.textContent = "Tempoh masa tak sejajar — perlu 2 dari 3 (M15/H1/H4) sama arah";
   }
 
-  // confluence checklist + confidence score against indicators we already
-  // compute elsewhere. This is a technical confluence score, not a
-  // position-sizing or "how much to buy" instruction.
-  if (allGreen || allRed){
-    const wantUp = allGreen;
+  if (wantUp !== null){
+    const votes = wantUp ? upVotes : downVotes;
     const trendOk = wantUp ? trendState === "up" : trendState === "down";
     const pressureVal = wantUp ? lastBuyPct : lastSellPct;
     const pressureOk = pressureVal > 55;
-    const refPrice = wantUp
-      ? Math.min(...last3.map(c => c.low))
-      : Math.max(...last3.map(c => c.high));
 
-    // 3 weighted factors -> single 0-100% confluence score
+    // weighted confidence: timeframe alignment carries the most weight,
+    // since this technique is fundamentally about multi-timeframe agreement
+    const tfScore = (votes / 3) * 100;
+    const nagaBonus = (nagaWinDir === (wantUp ? "up" : "down")) ? 10 : 0;
     const trendScore = trendOk ? 100 : 0;
     const pressureScore = Math.max(0, Math.min(100, (pressureVal - 50) * 2));
     const zoneFavor = wantUp ? lastDemandSize : lastSupplySize;
     const zoneAgainst = wantUp ? lastSupplySize : lastDemandSize;
     const zoneTotal = zoneFavor + zoneAgainst || 1;
     const zoneScore = (zoneFavor / zoneTotal) * 100;
-    const confidence = Math.round(trendScore * 0.4 + pressureScore * 0.4 + zoneScore * 0.2);
+    const confidence = Math.min(100, Math.round(
+      tfScore * 0.35 + trendScore * 0.25 + pressureScore * 0.25 + zoneScore * 0.15 + nagaBonus
+    ));
 
     const confLabel = confidence >= 70 ? "Keyakinan Tinggi"
       : confidence >= 40 ? "Keyakinan Sederhana"
       : "Keyakinan Rendah";
     const confClass = confidence >= 70 ? "yes" : confidence >= 40 ? "" : "no";
 
-    sub.innerHTML = `3 candle H1 berturut-turut ${wantUp ? "HIJAU" : "MERAH"} · <b class="confidence-inline ${confClass}">${confidence}% ${confLabel}</b>`;
+    sub.innerHTML = `${votes}/3 tempoh masa sejajar ${wantUp ? "NAIK" : "TURUN"} · <b class="confidence-inline ${confClass}">${confidence}% ${confLabel}</b>`;
+
+    // stop-loss reference from whichever timeframe actually leans our way,
+    // preferring H4 (widest) if it agrees, else H1, else M15
+    const preferOrder = ["h4", "h1", "m15"];
+    let refTf = null;
+    for (const key of preferOrder){
+      if (evals[key].dir === (wantUp ? "up" : "down")){ refTf = key; break; }
+    }
+    const refHistory = refTf ? evals[refTf].last7 : evals.h1.last7 || evals.m15.last7;
+    const refPrice = wantUp
+      ? Math.min(...refHistory.map(c => c.low))
+      : Math.max(...refHistory.map(c => c.high));
+    const refLabel = TIMEFRAMES.find(t => t.key === refTf)?.label || "H1";
 
     checklistEl.innerHTML = `
+      <div class="signal-check yes">
+        <span>✓</span> Tempoh masa sejajar (${votes}/3) — ${tfScore.toFixed(0)}%
+      </div>
       <div class="signal-check ${trendOk ? "yes" : "no"}">
         <span>${trendOk ? "✓" : "✗"}</span> Badge Tren sejajar (${trendState === "up" ? "NAIK" : "TURUN"}) — ${trendScore}%
       </div>
@@ -705,7 +735,7 @@ function renderSignal(){
         <span>${zoneScore > 50 ? "✓" : "✗"}</span> Zon ${wantUp ? "Demand" : "Supply"} lebih besar — ${zoneScore.toFixed(0)}%
       </div>
       <div class="signal-check hint">
-        <span>ℹ</span> Rujukan stop-loss: ${wantUp ? "bawah" : "atas"} ${fmt(refPrice)} (${wantUp ? "low" : "high"} 3 candle)
+        <span>ℹ</span> Rujukan stop-loss (${refLabel}): ${wantUp ? "bawah" : "atas"} ${fmt(refPrice)}
       </div>
       <div class="signal-check hint">
         <span>ℹ</span> Skor confluence — bukan arahan saiz kemasukan
@@ -715,9 +745,10 @@ function renderSignal(){
     checklistEl.innerHTML = "";
   }
 
-  if (currentCandle){
-    const isGreen = currentCandle.close >= currentCandle.open;
-    liveEl.innerHTML = `Candle semasa (belum tutup): <span class="${isGreen ? "up" : "down"}">${isGreen ? "▲ hijau" : "▼ merah"} — belum sah</span>`;
+  const liveH1 = tfData.h1.current;
+  if (liveH1){
+    const isGreen = liveH1.close >= liveH1.open;
+    liveEl.innerHTML = `Candle H1 semasa (belum tutup): <span class="${isGreen ? "up" : "down"}">${isGreen ? "▲ hijau" : "▼ merah"} — belum sah</span>`;
   } else {
     liveEl.textContent = "";
   }
