@@ -357,6 +357,15 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .signal-live .up{ color:var(--bid-bright); }
 .signal-live .down{ color:var(--ask-bright); }
 
+.signal-preview{
+  flex-basis:100%; font-size:11px; line-height:1.5;
+  padding:8px 12px; border-radius:var(--radius);
+  border:1px dashed var(--border);
+}
+.signal-preview:empty{ display:none; }
+.signal-preview.up{ color:var(--bid-bright); border-color:var(--bid); background:var(--bid-row-tint); }
+.signal-preview.down{ color:var(--ask-bright); border-color:var(--ask); background:var(--ask-row-tint); }
+
 /* ============ MOMENTUM & TREND ============ */
 .momentum__inner{
   display:flex; align-items:center; gap:28px;
