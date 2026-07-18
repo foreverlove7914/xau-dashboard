@@ -586,7 +586,8 @@ function handleKline(tfKey, d){
     open: parseFloat(k.o),
     close: parseFloat(k.c),
     high: parseFloat(k.h),
-    low: parseFloat(k.l)
+    low: parseFloat(k.l),
+    closeTime: k.T
   };
   const slot = tfData[tfKey];
   if (k.x){
@@ -610,6 +611,16 @@ function evalTimeframe(history){
   if (greenCount >= 5) return { state: "kukuh", dir: "up", last7 };
   if (redCount >= 5) return { state: "kukuh", dir: "down", last7 };
   return { state: "campuran", last7 };
+}
+
+// Preview version — swaps in the still-forming candle as the 7th one, so
+// we can show an early, UNCONFIRMED read of where this timeframe is
+// heading before its candle actually closes. Never used for the official
+// entry badge — preview only.
+function evalTimeframePreview(history, current){
+  if (!current || history.length < 6) return null;
+  const combined = [...history.slice(-6), current];
+  return evalTimeframe(combined);
 }
 
 function renderSignal(){
@@ -768,6 +779,35 @@ function renderSignal(){
   } else {
     liveEl.textContent = "";
   }
+
+  // ---- early preview: peek at still-forming candles, unconfirmed ----
+  const previewEl = document.getElementById("signalPreview");
+  const previewEvals = {};
+  for (const tf of TIMEFRAMES){
+    previewEvals[tf.key] = evalTimeframePreview(tfData[tf.key].history, tfData[tf.key].current);
+  }
+  const previewDirs = TIMEFRAMES.map(tf => previewEvals[tf.key]?.dir).filter(Boolean);
+  const previewUpVotes = previewDirs.filter(d => d === "up").length;
+  const previewDownVotes = previewDirs.filter(d => d === "down").length;
+  let previewWantUp = null;
+  if (previewUpVotes >= 2) previewWantUp = true;
+  else if (previewDownVotes >= 2) previewWantUp = false;
+
+  // only show the preview if it points somewhere the CONFIRMED badge
+  // doesn't already show — no point previewing what's already official
+  if (previewWantUp !== null && previewWantUp !== wantUp){
+    const contributingTfs = TIMEFRAMES.filter(tf => previewEvals[tf.key]?.dir === (previewWantUp ? "up" : "down"));
+    const soonestCloseTime = Math.min(...contributingTfs.map(tf => tfData[tf.key].current?.closeTime || Infinity));
+    const msLeft = soonestCloseTime - Date.now();
+    const minsLeft = Math.max(0, Math.floor(msLeft / 60000));
+    const secsLeft = Math.max(0, Math.floor((msLeft % 60000) / 1000));
+    const tfNames = contributingTfs.map(tf => tf.label).join(" + ");
+    previewEl.className = `signal-preview ${previewWantUp ? "up" : "down"}`;
+    previewEl.innerHTML = `⚠ PRATONTON (belum sah): jika ${tfNames} tutup macam sekarang, isyarat ${previewWantUp ? "BELI" : "JUAL"} berpotensi keluar dalam ~${minsLeft}m ${secsLeft}s. Candle boleh berubah sebelum tutup — jangan masuk berdasarkan ini sahaja.`;
+  } else {
+    previewEl.className = "signal-preview";
+    previewEl.textContent = "";
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -786,4 +826,5 @@ window.addEventListener("DOMContentLoaded", () => {
   fetchInitialCandles();
   tickClock();
   setInterval(tickClock, 1000);
+  setInterval(renderSignal, 15000); // keeps the preview countdown fresh
 });
