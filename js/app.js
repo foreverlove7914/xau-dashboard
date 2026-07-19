@@ -476,6 +476,34 @@ function setLastPrice(price){
   priceTicks.push({ p: price });
   if (priceTicks.length > PRICE_TICK_HISTORY) priceTicks.shift();
   renderTrend();
+  renderRoundNumbers();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Big Round Number — nearest psychologically "round" price levels just  */
+/* below and above the current price. Multiples of 100 are the strongest */
+/* (heaviest psychological pull), then 50, then plain multiples of 10.   */
+/* ---------------------------------------------------------------------- */
+function roundNumberTier(n){
+  if (Math.round(n) % 100 === 0) return "Kuat";
+  if (Math.round(n) % 50 === 0) return "Sederhana";
+  return "Lemah";
+}
+
+function renderRoundNumbers(){
+  const belowPriceEl = document.getElementById("roundBelowPrice");
+  if (!belowPriceEl || lastPrice == null) return;
+
+  const below = Math.floor(lastPrice / 10) * 10;
+  const above = below + 10;
+
+  belowPriceEl.textContent = fmt(below);
+  document.getElementById("roundBelowHint").textContent =
+    `${roundNumberTier(below)} · jarak ${fmt(lastPrice - below)}`;
+
+  document.getElementById("roundAbovePrice").textContent = fmt(above);
+  document.getElementById("roundAboveHint").textContent =
+    `${roundNumberTier(above)} · jarak ${fmt(above - lastPrice)}`;
 }
 
 /* ---------------------------------------------------------------------- */
