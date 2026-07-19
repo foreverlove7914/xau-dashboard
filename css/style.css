@@ -443,6 +443,8 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .zone-badge--entry .zone-badge__price{ color:var(--gold-bright); }
 .zone-badge--stop{ border-left:3px solid var(--ask); }
 .zone-badge--stop .zone-badge__price{ color:var(--ask-bright); }
+.zone-badge--tp{ border-left:3px solid var(--bid); }
+.zone-badge--tp .zone-badge__price{ color:var(--bid-bright); }
 .zone-badge--round{ border-left:3px solid var(--gold-dim); }
 .zone-badge--round .zone-badge__price{ color:var(--gold); }
 .footprint__cols{
