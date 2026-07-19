@@ -283,7 +283,7 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .book__col::-webkit-scrollbar-thumb, .tape__body::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
 .book__col::-webkit-scrollbar-track, .tape__body::-webkit-scrollbar-track{ background:transparent; }
 
-/* ============ 7 CANDLE / 7 NAGA ENTRY SIGNAL ============ */
+/* ============ 3-CANDLE H1 ENTRY SIGNAL ============ */
 .signal__inner{
   display:flex; align-items:center; gap:24px; flex-wrap:wrap;
   padding:16px 20px;
@@ -344,6 +344,11 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .tf-card.collecting .tf-card__status{ color:var(--text-faint); font-weight:400; }
 
 .signal-checklist{ display:flex; flex-direction:column; gap:4px; min-width:220px; }
+.signal-range{
+  font-size:11px; color:var(--text-dim); flex-basis:100%;
+  padding:4px 0;
+}
+.signal-range b{ color:var(--gold-bright); font-variant-numeric:tabular-nums; }
 .signal-check{ font-size:11px; display:flex; align-items:center; gap:6px; color:var(--text-dim); }
 .signal-check span{ font-weight:700; width:14px; text-align:center; }
 .signal-check.yes{ color:var(--bid-bright); }
@@ -438,6 +443,8 @@ h1,h2,h3{ font-family:var(--font-display); margin:0; }
 .zone-badge--entry .zone-badge__price{ color:var(--gold-bright); }
 .zone-badge--stop{ border-left:3px solid var(--ask); }
 .zone-badge--stop .zone-badge__price{ color:var(--ask-bright); }
+.zone-badge--round{ border-left:3px solid var(--gold-dim); }
+.zone-badge--round .zone-badge__price{ color:var(--gold); }
 .footprint__cols{
   display:grid; grid-template-columns:1fr 100px 1fr 90px;
   padding:6px 14px; font-size:10px; color:var(--text-dim);
