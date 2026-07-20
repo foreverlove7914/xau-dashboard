@@ -38,6 +38,8 @@ const TREND_SLOW_WINDOW = 200;   // ticks — longer-term average
 const TREND_HYSTERESIS = 0.00006; // must clear the flip point by this much to actually change direction
 const PRICE_TICK_HISTORY = 400;
 
+const TP_RATIO = 2; // take-profit distance = this many times the stop-loss distance (1:2 risk:reward)
+
 let trendState = null; // "up" | "down" — sticky once set, no more "flat" wobble
 let lastBuyPct = 50;
 let lastSellPct = 50;
@@ -708,6 +710,8 @@ function renderSignal(){
   const entryHintEl = document.getElementById("entryPriceHint");
   const stopPriceEl = document.getElementById("stopLossValue");
   const stopHintEl = document.getElementById("stopLossHint");
+  const tpPriceEl = document.getElementById("takeProfitValue");
+  const tpHintEl = document.getElementById("takeProfitHint");
 
   badge.className = "signal-badge";
   if (wantUp === true){
@@ -727,6 +731,8 @@ function renderSignal(){
     entryHintEl.textContent = "Menunggu isyarat";
     stopPriceEl.textContent = "—";
     stopHintEl.textContent = "Menunggu isyarat";
+    tpPriceEl.textContent = "—";
+    tpHintEl.textContent = "Menunggu isyarat";
   }
 
   if (wantUp !== null){
@@ -769,12 +775,18 @@ function renderSignal(){
       : Math.max(...refHistory.map(c => c.high));
     const refLabel = TIMEFRAMES.find(t => t.key === refTf)?.label || "H1";
 
-    // fill the persistent entry / stop-loss badges
+    // fill the persistent entry / stop-loss / take-profit badges
     entryPriceEl.textContent = fmt(lastPrice);
     entryHintEl.textContent = "Harga semasa isyarat";
     stopPriceEl.textContent = fmt(refPrice);
     const stopDistance = Math.abs(lastPrice - refPrice);
     stopHintEl.textContent = `${refLabel} · jarak ${fmt(stopDistance)}`;
+
+    const tpPrice = wantUp
+      ? lastPrice + stopDistance * TP_RATIO
+      : lastPrice - stopDistance * TP_RATIO;
+    tpPriceEl.textContent = fmt(tpPrice);
+    tpHintEl.textContent = `Nisbah 1:${TP_RATIO} · jarak ${fmt(stopDistance * TP_RATIO)}`;
 
     checklistEl.innerHTML = `
       <div class="signal-check yes">
